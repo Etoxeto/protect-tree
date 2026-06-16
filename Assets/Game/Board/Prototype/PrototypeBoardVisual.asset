@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0c597213b83b0764b91adba3b8515609, type: 3}
+  m_Name: PrototypeBoardVisual
+  m_EditorClassIdentifier: 
+  groundTopMaterial: {fileID: 0}
+  highGroundTopMaterial: {fileID: 0}
+  obstacleTopMaterial: {fileID: 0}
+  frontSideMaterial: {fileID: 0}
+  leftSideMaterial: {fileID: 0}
+  rightSideMaterial: {fileID: 0}
+  selectedFillMaterial: {fileID: 0}
+  selectedOutlineMaterial: {fileID: 0}
+  unitPreviewMaterial: {fileID: 0}
+  groundTopColor: {r: 0.75, g: 0.75, b: 0.75, a: 1}
+  highGroundTopColor: {r: 0.95, g: 0.8, b: 0.25, a: 1}
+  obstacleTopColor: {r: 0.9, g: 0.25, b: 0.25, a: 1}
+  frontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+  leftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+  rightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  materialEntries:
+  - visualKey: g
+    topMaterial: {fileID: 2100000, guid: cda9ed14655536847835904cfafcdc7f, type: 2}
+    frontSideMaterial: {fileID: 0}
+    leftSideMaterial: {fileID: 0}
+    rightSideMaterial: {fileID: 0}
+    fallbackTopColor: {r: 0, g: 0, b: 0, a: 0}
+    fallbackFrontSideColor: {r: 0, g: 0, b: 0, a: 0}
+    fallbackLeftSideColor: {r: 0, g: 0, b: 0, a: 0}
+    fallbackRightSideColor: {r: 0, g: 0, b: 0, a: 0}

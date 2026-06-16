@@ -1,0 +1,132 @@
+return {
+    Sprout = {
+        display_name = "奥术士兵",
+        portrait = "soldier_arcane",
+        class_id = "sword",
+        cost = 3,
+        rarity = 1,
+        synergies = {
+            "Arcane",
+        },
+        attack_interval_seconds = 1.0,
+        default_facing = "Right",
+        attack_range = {
+            { forward = 0, right = 0 },
+            { forward = 1, right = 0 },
+            { forward = 2, right = 0 },
+        },
+        recovery_seconds = 3.0,
+        deployable_terrains = {
+            Ground = true,
+            HighGround = true,
+        },
+        levels = {
+            [1] = {
+                sell_value = 3,
+                max_health = 12,
+                max_block_count = 1,
+                damage = 4,
+            },
+            [2] = {
+                sell_value = 9,
+                max_health = 24,
+                max_block_count = 2,
+                damage = 8,
+            },
+            [3] = {
+                sell_value = 27,
+                max_health = 48,
+                max_block_count = 3,
+                damage = 16,
+            },
+        },
+    },
+    -- 内部 ID 暂时保持稳定，展示信息则对应当前已经接入的美术资源。
+    Bramble = {
+        display_name = "黄金骑士",
+        portrait = "knight_golden",
+        class_id = "shield",
+        cost = 4,
+        rarity = 2,
+        synergies = {
+            "Arcane",
+            "Golden",
+        },
+        attack_interval_seconds = 1.2,
+        default_facing = "Right",
+        attack_range = {
+            { forward = 0, right = 0 },
+            { forward = 1, right = 0 },
+        },
+        recovery_seconds = 4.0,
+        deployable_terrains = {
+            Ground = true,
+        },
+        levels = {
+            [1] = {
+                sell_value = 4,
+                max_health = 20,
+                max_block_count = 2,
+                damage = 3,
+            },
+            [2] = {
+                sell_value = 12,
+                max_health = 40,
+                max_block_count = 3,
+                damage = 6,
+            },
+            [3] = {
+                sell_value = 36,
+                max_health = 80,
+                max_block_count = 4,
+                damage = 12,
+            },
+        },
+    },
+    Bloom = {
+        display_name = "风暴术士",
+        portrait = "soldier_storm",
+        class_id = "staff",
+        cost = 5,
+        rarity = 3,
+        synergies = {
+            "Arcane",
+            "Storm",
+        },
+        attack_interval_seconds = 0.8,
+        default_facing = "Right",
+        attack_range = {
+            { forward = 1, right = -1 },
+            { forward = 1, right = 0 },
+            { forward = 1, right = 1 },
+            { forward = 2, right = -1 },
+            { forward = 2, right = 0 },
+            { forward = 2, right = 1 },
+            { forward = 3, right = 0 },
+        },
+        recovery_seconds = 3.0,
+        deployable_terrains = {
+            HighGround = true,
+        },
+        levels = {
+            [1] = {
+                sell_value = 5,
+                max_health = 8,
+                max_block_count = 0,
+                damage = 6,
+            },
+            [2] = {
+                sell_value = 15,
+                max_health = 16,
+                max_block_count = 0,
+                damage = 12,
+            },
+            [3] = {
+                sell_value = 45,
+                max_health = 32,
+                max_block_count = 0,
+                damage = 24,
+            },
+        },
+    },
+}

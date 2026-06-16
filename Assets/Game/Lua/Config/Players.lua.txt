@@ -1,0 +1,25 @@
+local board = require("Config.Board")
+
+local function build_default_player()
+    return {
+        max_health = 10,
+        starting_gold = 10,
+        round_reward = 5,
+        bench_capacity = board.reserve_capacity,
+        starting_deployment_limit = 2,
+    }
+end
+
+return {
+    -- 默认仍然只启用玩家 1，避免正式单人场景被额外玩家卡住准备流程。
+    -- 本地多人原型可通过 Session.start({ player_ids = { 1, 2 } }) 启用更多玩家。
+    active_player_ids = {
+        1,
+    },
+    definitions = {
+        [1] = build_default_player(),
+        [2] = build_default_player(),
+        [3] = build_default_player(),
+        [4] = build_default_player(),
+    },
+}

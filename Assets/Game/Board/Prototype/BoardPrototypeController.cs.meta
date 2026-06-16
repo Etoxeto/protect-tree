@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 7ae6f9ea5d429de46bcddad5625666f2
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - mapDefinition: {instanceID: 0}
+  - meshRoot: {instanceID: 0}
+  - highlightRoot: {instanceID: 0}
+  - unitRoot: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

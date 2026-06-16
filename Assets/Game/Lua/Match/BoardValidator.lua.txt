@@ -1,0 +1,203 @@
+local M = {}
+
+local function require_definition(definitions, value, field_name)
+    local definition = definitions[value]
+
+    if definition == nil then
+        error("Unknown board " .. field_name .. ": " .. tostring(value))
+    end
+
+    return definition
+end
+
+local function validate_cells(board)
+    local coordinates = {}
+    local cell_count = 0
+    local reserve_count = 0
+    local temporary_reserve_count = 0
+
+    for cell_id, cell in pairs(board.cells) do
+        if type(cell_id) ~= "number" or cell_id <= 0 or cell_id % 1 ~= 0 then
+            error("Board cell ID must be a positive integer: " .. tostring(cell_id))
+        end
+
+        if cell.grid_x < 0 or cell.grid_x >= board.width
+            or cell.grid_y < 0 or cell.grid_y >= board.height then
+            error("Board cell is outside layout: " .. cell_id)
+        end
+
+        require_definition(board.terrain_definitions, cell.terrain, "terrain")
+        require_definition(board.zone_definitions, cell.zone, "zone")
+
+        local key = cell.grid_x .. "," .. cell.grid_y
+        if coordinates[key] ~= nil then
+            error("Duplicate board coordinate: " .. key)
+        end
+
+        coordinates[key] = cell_id
+        cell_count = cell_count + 1
+
+        if cell.zone == "Reserve" then
+            reserve_count = reserve_count + 1
+        elseif cell.zone == "TemporaryReserve" then
+            temporary_reserve_count = temporary_reserve_count + 1
+        end
+    end
+
+    if cell_count ~= board.width * board.height then
+        error("Board must contain exactly width * height cells")
+    end
+
+    if reserve_count ~= board.reserve_capacity then
+        error("Reserve cell count must match reserve_capacity")
+    end
+
+    if temporary_reserve_count ~= board.temporary_reserve_capacity then
+        error("Temporary reserve cell count must match temporary_reserve_capacity")
+    end
+
+    if type(board.reserve_cell_ids) ~= "table"
+        or #board.reserve_cell_ids ~= board.reserve_capacity then
+        error("reserve_cell_ids must match reserve_capacity")
+    end
+
+    if type(board.temporary_reserve_cell_ids) ~= "table"
+        or #board.temporary_reserve_cell_ids
+            ~= board.temporary_reserve_capacity then
+        error("temporary_reserve_cell_ids must match temporary_reserve_capacity")
+    end
+
+    local ordered_reserve_ids = {}
+    for _, cell_id in ipairs(board.reserve_cell_ids) do
+        if board.cells[cell_id] == nil
+            or board.cells[cell_id].zone ~= "Reserve" then
+            error("reserve_cell_ids contains a non-reserve cell: " .. tostring(cell_id))
+        end
+
+        if ordered_reserve_ids[cell_id] then
+            error("reserve_cell_ids contains duplicate cell: " .. tostring(cell_id))
+        end
+        ordered_reserve_ids[cell_id] = true
+    end
+
+    local ordered_temporary_reserve_ids = {}
+    for _, cell_id in ipairs(board.temporary_reserve_cell_ids) do
+        if board.cells[cell_id] == nil
+            or board.cells[cell_id].zone ~= "TemporaryReserve" then
+            error(
+                "temporary_reserve_cell_ids contains a non-temporary-reserve cell: "
+                .. tostring(cell_id)
+            )
+        end
+
+        if ordered_temporary_reserve_ids[cell_id] then
+            error(
+                "temporary_reserve_cell_ids contains duplicate cell: "
+                .. tostring(cell_id)
+            )
+        end
+        ordered_temporary_reserve_ids[cell_id] = true
+    end
+end
+
+local function validate_route_sample(
+    board,
+    route_id,
+    sample,
+    previous_progress,
+    previous_sample)
+    local cell = board.cells[sample.cell_id]
+    if cell == nil then
+        error("Route sample cell not found: " .. tostring(sample.cell_id))
+    end
+
+    if cell.grid_x ~= sample.grid_x or cell.grid_y ~= sample.grid_y then
+        error("Route sample coordinate does not match cell: " .. sample.cell_id)
+    end
+
+    local terrain = board.terrain_definitions[cell.terrain]
+    local zone = board.zone_definitions[cell.zone]
+    if terrain.allows_enemy_route ~= true or zone.allows_enemy_route ~= true then
+        error(
+            "Route "
+            .. route_id
+            .. " crosses non-traversable cell "
+            .. sample.cell_id
+        )
+    end
+
+    if sample.path_progress <= previous_progress then
+        error("Route path_progress must increase: " .. route_id)
+    end
+
+    if previous_sample ~= nil then
+        local distance =
+            math.abs(sample.grid_x - previous_sample.grid_x)
+            + math.abs(sample.grid_y - previous_sample.grid_y)
+        if distance ~= 1 then
+            error("Route samples must use adjacent cells: " .. route_id)
+        end
+    end
+
+    if cell.route_positions[route_id] ~= sample.path_progress then
+        error("Cell route position does not match route sample: " .. sample.cell_id)
+    end
+end
+
+local function validate_routes(board)
+    for route_id, route in pairs(board.routes) do
+        if type(route_id) ~= "number" or route_id <= 0 or route_id % 1 ~= 0 then
+            error("Route ID must be a positive integer: " .. tostring(route_id))
+        end
+
+        if #route.samples < 2 then
+            error("Route must contain at least two samples: " .. route_id)
+        end
+
+        if route.samples[1].path_progress ~= route.start_progress then
+            error("Route first sample must match start_progress: " .. route_id)
+        end
+
+        if route.samples[#route.samples].path_progress ~= route.endpoint_progress then
+            error("Route last sample must match endpoint_progress: " .. route_id)
+        end
+
+        if board.cells[route.samples[1].cell_id].zone ~= "Spawn" then
+            error("Route must begin at a Spawn cell: " .. route_id)
+        end
+
+        if board.cells[route.samples[#route.samples].cell_id].zone ~= "Endpoint" then
+            error("Route must end at an Endpoint cell: " .. route_id)
+        end
+
+        local previous_progress = -math.huge
+        local previous_sample = nil
+        for _, sample in ipairs(route.samples) do
+            validate_route_sample(
+                board,
+                route_id,
+                sample,
+                previous_progress,
+                previous_sample)
+            previous_progress = sample.path_progress
+            previous_sample = sample
+        end
+    end
+end
+
+function M.validate(board)
+    if type(board) ~= "table" then
+        error("Board must be a table")
+    end
+
+    if type(board.width) ~= "number" or board.width <= 0
+        or type(board.height) ~= "number" or board.height <= 0 then
+        error("Board width and height must be positive")
+    end
+
+    validate_cells(board)
+    validate_routes(board)
+    return true
+end
+
+return M

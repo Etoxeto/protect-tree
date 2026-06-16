@@ -1,0 +1,181 @@
+local board = require("Config.Board")
+local board_queries = require("Match.BoardQueries")
+
+local M = {}
+
+local is_active = false
+local assignments_by_enemy_id = {}
+local pending_events = {}
+
+local function reset()
+    is_active = false
+    assignments_by_enemy_id = {}
+    pending_events = {}
+end
+
+local function emit_unblock(enemy_instance_id, assignment)
+    table.insert(pending_events, {
+        type = "EnemyUnblockRequested",
+        enemy_instance_id = enemy_instance_id,
+        piece_instance_id = assignment.piece_instance_id,
+    })
+end
+
+local function release_invalid_assignments(pieces_by_id, enemies_by_id)
+    local enemy_ids = {}
+
+    for enemy_instance_id in pairs(assignments_by_enemy_id) do
+        table.insert(enemy_ids, enemy_instance_id)
+    end
+
+    table.sort(enemy_ids)
+
+    for _, enemy_instance_id in ipairs(enemy_ids) do
+        local assignment = assignments_by_enemy_id[enemy_instance_id]
+        local enemy = enemies_by_id[enemy_instance_id]
+        local piece = pieces_by_id[assignment.piece_instance_id]
+        local remains_valid =
+            enemy ~= nil
+            and enemy.status == "Alive"
+            and piece ~= nil
+            and piece.location == "Board"
+            and piece.status == "Active"
+            and piece.cell_id == assignment.cell_id
+
+        if not remains_valid then
+            emit_unblock(enemy_instance_id, assignment)
+            assignments_by_enemy_id[enemy_instance_id] = nil
+        end
+    end
+end
+
+local function count_assignments_by_piece()
+    local counts = {}
+
+    for _, assignment in pairs(assignments_by_enemy_id) do
+        local piece_instance_id = assignment.piece_instance_id
+        counts[piece_instance_id] = (counts[piece_instance_id] or 0) + 1
+    end
+
+    return counts
+end
+
+local function can_piece_block(piece, enemy, assigned_count, delta_time)
+    if piece.location ~= "Board" or piece.status ~= "Active" then
+        return false
+    end
+
+    if assigned_count >= piece.max_block_count then
+        return false
+    end
+
+    if piece.owner_player_id ~= enemy.target_player_id then
+        return false
+    end
+
+    local cell = board.cells[piece.cell_id]
+    if cell == nil or cell.terrain ~= "Ground" then
+        return false
+    end
+
+    local block_progress = board_queries.get_route_progress(cell, enemy.route_id)
+    if block_progress == nil then
+        return false
+    end
+
+    -- 只在敌人本 Tick 刚经过阻挡点时尝试阻挡。
+    -- 若阻挡数已满，敌人下一 Tick 已越过该窗口，不会被拉回。
+    local crossing_window = enemy.path_speed * delta_time + 0.000001
+    return enemy.path_progress >= block_progress
+        and enemy.path_progress <= block_progress + crossing_window
+end
+
+function M.start()
+    reset()
+end
+
+function M.begin_battle()
+    if is_active then
+        error("BlockResolver battle is already active")
+    end
+
+    is_active = true
+    assignments_by_enemy_id = {}
+end
+
+function M.end_battle()
+    local enemy_ids = {}
+
+    for enemy_instance_id in pairs(assignments_by_enemy_id) do
+        table.insert(enemy_ids, enemy_instance_id)
+    end
+
+    table.sort(enemy_ids)
+
+    for _, enemy_instance_id in ipairs(enemy_ids) do
+        emit_unblock(enemy_instance_id, assignments_by_enemy_id[enemy_instance_id])
+    end
+
+    assignments_by_enemy_id = {}
+    is_active = false
+end
+
+function M.update(delta_time, piece_snapshot, enemy_snapshot)
+    if not is_active then
+        return
+    end
+
+    local pieces_by_id = {}
+    local enemies_by_id = {}
+
+    for _, piece in ipairs(piece_snapshot.pieces) do
+        pieces_by_id[piece.instance_id] = piece
+    end
+
+    for _, enemy in ipairs(enemy_snapshot.enemies) do
+        enemies_by_id[enemy.instance_id] = enemy
+    end
+
+    release_invalid_assignments(pieces_by_id, enemies_by_id)
+    local assigned_counts = count_assignments_by_piece()
+
+    for _, enemy in ipairs(enemy_snapshot.enemies) do
+        if enemy.status == "Alive"
+            and assignments_by_enemy_id[enemy.instance_id] == nil then
+            for _, piece in ipairs(piece_snapshot.pieces) do
+                local assigned_count = assigned_counts[piece.instance_id] or 0
+
+                if can_piece_block(piece, enemy, assigned_count, delta_time) then
+                    local cell = board.cells[piece.cell_id]
+                    local block_progress =
+                        board_queries.get_route_progress(cell, enemy.route_id)
+                    assignments_by_enemy_id[enemy.instance_id] = {
+                        piece_instance_id = piece.instance_id,
+                        cell_id = piece.cell_id,
+                    }
+                    assigned_counts[piece.instance_id] = assigned_count + 1
+
+                    table.insert(pending_events, {
+                        type = "EnemyBlockRequested",
+                        enemy_instance_id = enemy.instance_id,
+                        piece_instance_id = piece.instance_id,
+                        block_progress = block_progress,
+                    })
+                    break
+                end
+            end
+        end
+    end
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.shutdown()
+    reset()
+end
+
+return M

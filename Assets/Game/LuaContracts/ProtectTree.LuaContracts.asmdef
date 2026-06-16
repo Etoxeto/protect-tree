@@ -1,0 +1,16 @@
+{
+    "name": "ProtectTree.LuaContracts",
+    "rootNamespace": "ProtectTree.LuaContracts",
+    "references": [
+        "ProtectTree.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

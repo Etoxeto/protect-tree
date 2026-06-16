@@ -1,0 +1,46 @@
+return {
+    order = {
+        "Arcane",
+        "Golden",
+        "Storm",
+        "Sun",
+    },
+    definitions = {
+        Arcane = {
+            display_name = "奥术",
+            levels = {
+                {
+                    required_unique_pieces = 2,
+                    damage_bonus = 3,
+                },
+            },
+        },
+        Golden = {
+            display_name = "黄金",
+            levels = {
+                {
+                    required_unique_pieces = 2,
+                    damage_bonus = 2,
+                },
+            },
+        },
+        Storm = {
+            display_name = "风暴",
+            levels = {
+                {
+                    required_unique_pieces = 2,
+                    damage_bonus = 2,
+                },
+            },
+        },
+        Sun = {
+            display_name = "太阳",
+            levels = {
+                {
+                    required_unique_pieces = 2,
+                    damage_bonus = 2,
+                },
+            },
+        },
+    },
+}

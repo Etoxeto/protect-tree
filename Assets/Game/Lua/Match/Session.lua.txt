@@ -1,0 +1,516 @@
+local M = {}
+
+local flow = require("Match.Flow")
+local enemy_roster = require("Match.EnemyRoster")
+local wave_spawner = require("Match.WaveSpawner")
+local leak_resolver = require("Match.LeakResolver")
+local player_roster = require("Match.PlayerRoster")
+local piece_roster = require("Match.PieceRoster")
+local piece_attack_planner = require("Match.PieceAttackPlanner")
+local block_resolver = require("Match.BlockResolver")
+local enemy_attack_planner = require("Match.EnemyAttackPlanner")
+local shop_roster = require("Match.ShopRoster")
+local board_snapshot = require("Match.BoardSnapshot")
+local board_validator = require("Match.BoardValidator")
+local board = require("Config.Board")
+
+local is_started = false
+local pending_events = {}
+local is_wave_spawn_completed = false
+local is_combat_active = false
+
+local function publish(events)
+    for _, event in ipairs(events) do
+        table.insert(pending_events, event)
+    end
+end
+
+local function copy_event(event)
+    local copied = {}
+
+    for key, value in pairs(event) do
+        copied[key] = value
+    end
+
+    return copied
+end
+
+local function get_spawn_target_player_ids()
+    local alive_player_ids = player_roster.get_alive_player_ids()
+    local flow_snapshot = flow.get_snapshot()
+
+    if flow_snapshot.phase ~= "BossBattle" then
+        return alive_player_ids
+    end
+
+    -- 多人共享 Boss 需要独立的共享战场所有权。当前本地多人原型只验证普通个人防守，
+    -- 因此 Boss 临时锚定到首个存活玩家，避免错误生成“每人一个 Boss”的规则。
+    if #alive_player_ids == 0 then
+        return alive_player_ids
+    end
+
+    return {
+        alive_player_ids[1],
+    }
+end
+
+local function route_enemy_events()
+    local events = enemy_roster.drain_events()
+
+    for _, event in ipairs(events) do
+        -- Boss 到达终点直接决定 Boss 战失败，不进入普通波次漏怪结算。
+        if not event.is_boss then
+            leak_resolver.handle_event(event)
+        end
+    end
+
+    publish(events)
+end
+
+local function route_piece_events()
+    publish(piece_roster.drain_events())
+end
+
+local function route_shop_events()
+    publish(shop_roster.drain_events())
+end
+
+local function route_player_events()
+    publish(player_roster.drain_events())
+end
+
+local function route_attack_events()
+    local events = piece_attack_planner.drain_events()
+
+    for _, event in ipairs(events) do
+        -- 攻击规划器只产生命令；敌人状态仍由 EnemyRoster 统一验证和修改。
+        enemy_roster.handle_event(event)
+        table.insert(pending_events, event)
+        route_enemy_events()
+    end
+end
+
+local function route_block_events()
+    local events = block_resolver.drain_events()
+
+    for _, event in ipairs(events) do
+        -- 阻挡关系由 BlockResolver 决定，再同时写入敌人与棋子权威状态。
+        enemy_roster.handle_event(event)
+        piece_roster.handle_event(event)
+        table.insert(pending_events, event)
+        route_enemy_events()
+        route_piece_events()
+    end
+end
+
+local function route_enemy_attack_events()
+    local events = enemy_attack_planner.drain_events()
+
+    for _, event in ipairs(events) do
+        piece_roster.handle_event(event)
+        table.insert(pending_events, event)
+        route_piece_events()
+    end
+end
+
+local function sell_temporary_reserve_pieces()
+    local sales = piece_roster.auto_sell_temporary_pieces()
+
+    for _, sale in ipairs(sales) do
+        player_roster.grant_gold(
+            sale.player_id,
+            sale.sell_value,
+            "TemporaryReserveAutoSell"
+        )
+    end
+
+    route_piece_events()
+    route_player_events()
+end
+
+local function route_flow_events()
+    local events = flow.drain_events()
+
+    for _, event in ipairs(events) do
+        wave_spawner.handle_event(event)
+        if event.type == "PhaseChanged" then
+            is_wave_spawn_completed = false
+
+            if event.phase == "Battle" then
+                leak_resolver.begin_wave(event.wave)
+            elseif event.phase == "Settlement" then
+                player_roster.grant_round_reward(event.wave)
+                route_player_events()
+
+                -- 结算免费刷新属于权威玩法规则；锁定商店会保留本轮商品。
+                local player_snapshot = player_roster.get_snapshot()
+                for _, player in ipairs(player_snapshot.players) do
+                    if player.status == "Alive" then
+                        shop_roster.refresh_if_unlocked(
+                            player.player_id,
+                            "Settlement"
+                        )
+                    end
+                end
+                route_shop_events()
+            elseif event.phase == "Preparation"
+                or event.phase == "BossPreparation" then
+                -- 每次进入新的准备阶段都重新收集玩家就绪意图。
+                player_roster.reset_ready()
+                route_player_events()
+            end
+
+            local next_is_combat =
+                event.phase == "Battle"
+                or event.phase == "JointDefense"
+                or event.phase == "BossBattle"
+
+            if next_is_combat and not is_combat_active then
+                -- 临时备战区只提供准备阶段处理机会，战斗开始时残留棋子统一出售。
+                sell_temporary_reserve_pieces()
+
+                -- 个人防守与未来联防共享同一战斗生命周期，联防开始不会让倒地棋子起身。
+                is_combat_active = true
+                piece_roster.begin_battle()
+                block_resolver.begin_battle()
+                piece_attack_planner.begin_battle(event.wave)
+                enemy_attack_planner.begin_battle()
+            elseif not next_is_combat and is_combat_active then
+                is_combat_active = false
+                block_resolver.end_battle()
+                route_block_events()
+                piece_roster.end_battle()
+                route_piece_events()
+                piece_attack_planner.end_battle()
+                enemy_attack_planner.end_battle()
+            end
+        end
+    end
+    publish(events)
+
+end
+
+local function route_spawner_events()
+    local events = wave_spawner.drain_events()
+
+    for _, event in ipairs(events) do
+        if event.type == "EnemySpawnRequested" then
+            -- 普通防守阶段每名存活玩家都获得同一波次的独立敌人。
+            -- 这里复制刷怪请求，而不是共享敌人实例，保证个人防区互不污染。
+            for _, player_id in ipairs(get_spawn_target_player_ids()) do
+                local player_spawn_event = copy_event(event)
+                player_spawn_event.target_player_id = player_id
+                enemy_roster.handle_event(player_spawn_event)
+                table.insert(pending_events, player_spawn_event)
+                route_enemy_events()
+            end
+        else
+            enemy_roster.handle_event(event)
+            table.insert(pending_events, event)
+            route_enemy_events()
+        end
+
+        if event.type == "WaveSpawnCompleted" then
+            is_wave_spawn_completed = true
+        end
+    end
+end
+
+local function resolve_personal_defense_leaks()
+    if not leak_resolver.resolve_wave() then
+        return
+    end
+
+    local events = leak_resolver.drain_events()
+
+    for _, event in ipairs(events) do
+        player_roster.handle_event(event)
+    end
+
+    publish(events)
+    publish(player_roster.drain_events())
+end
+
+local function try_complete_battle()
+    if not is_wave_spawn_completed then
+        return
+    end
+
+    if enemy_roster.get_alive_count() > 0 then
+        return
+    end
+
+    local flow_snapshot = flow.get_snapshot()
+    if flow_snapshot.phase == "BossBattle" then
+        local boss_result = enemy_roster.get_boss_result(flow_snapshot.wave)
+        if boss_result == nil then
+            error("Completed boss battle has no result")
+        end
+
+        if flow.complete_boss(boss_result) then
+            route_flow_events()
+        end
+        return
+    end
+
+    resolve_personal_defense_leaks()
+
+    if player_roster.get_alive_count() == 0 then
+        if flow.end_match("Defeat") then
+            route_flow_events()
+        end
+        return
+    end
+
+    if flow.complete_battle() then
+        route_flow_events()
+    end
+end
+
+function M.start(session_options)
+    -- 每次创建权威对局前验证地图与路线，避免错误配置运行到战斗中途才暴露。
+    board_validator.validate(board)
+    is_wave_spawn_completed = false
+    is_combat_active = false
+    pending_events = {}
+    player_roster.start(session_options)
+    shop_roster.start(session_options)
+    piece_roster.start(session_options)
+    piece_attack_planner.start()
+    block_resolver.start()
+    enemy_attack_planner.start()
+    enemy_roster.start()
+    wave_spawner.start()
+    leak_resolver.start(session_options)
+    flow.start()
+    is_started = true
+
+    route_flow_events()
+    route_spawner_events()
+
+end
+
+function M.update(delta_time)
+    if not is_started then
+        return
+    end
+
+    route_piece_events()
+
+    piece_roster.update(delta_time)
+    route_piece_events()
+
+    enemy_roster.update(delta_time)
+    route_enemy_events()
+
+    flow.update(delta_time)
+    route_flow_events()
+
+    wave_spawner.update(delta_time)
+    route_spawner_events()
+
+    block_resolver.update(
+        delta_time,
+        piece_roster.get_snapshot(),
+        enemy_roster.get_snapshot()
+    )
+    route_block_events()
+
+    -- 先完成移动和生成，再用该 Tick 的最新快照进行目标选择。
+    piece_attack_planner.update(
+        delta_time,
+        piece_roster.get_snapshot(),
+        enemy_roster.get_snapshot()
+    )
+    route_attack_events()
+
+    enemy_attack_planner.update(
+        delta_time,
+        piece_roster.get_snapshot(),
+        enemy_roster.get_snapshot()
+    )
+    route_enemy_attack_events()
+
+    -- 棋子可能在敌人攻击后倒地；同 Tick 释放阻挡，后续敌人才可继续前进。
+    block_resolver.update(
+        0,
+        piece_roster.get_snapshot(),
+        enemy_roster.get_snapshot()
+    )
+    route_block_events()
+
+    try_complete_battle()
+end
+
+function M.grant_piece(player_id, piece_id)
+    if not is_started then
+        error("Session is not started")
+    end
+
+    local instance_id = piece_roster.grant_piece(player_id, piece_id)
+    route_piece_events()
+    return instance_id
+end
+
+function M.grant_overflow_piece(player_id, piece_id)
+    if not is_started then
+        error("Session is not started")
+    end
+
+    local instance_id = piece_roster.grant_piece(player_id, piece_id, true)
+    route_piece_events()
+    return instance_id
+end
+
+function M.handle_command(command)
+    if not is_started then
+        error("Session is not started")
+    end
+
+    if command.type == "PiecePlaceRequested"
+        or command.type == "PieceDeployRequested"
+        or command.type == "PieceBenchRequested"
+        or command.type == "PieceSellRequested"
+        or command.type == "PieceFacingRequested"
+        or command.type == "ShopRefreshRequested"
+        or command.type == "ShopLockToggleRequested"
+        or command.type == "ShopUpgradeRequested"
+        or command.type == "ShopPurchaseRequested"
+        or command.type == "PlayerReadyRequested" then
+        -- 部署、朝向和商店操作都只允许在准备阶段提交。
+        local phase = flow.get_snapshot().phase
+        if phase ~= "Preparation" and phase ~= "BossPreparation" then
+            error("Preparation command cannot execute outside Preparation")
+        end
+    end
+
+    if command.type == "PlayerReadyRequested" then
+        player_roster.set_ready(command.player_id, command.is_ready)
+        route_player_events()
+
+        -- 所有存活玩家均就绪时，权威阶段立即开始战斗。
+        if player_roster.are_all_alive_players_ready()
+            and flow.complete_preparation() then
+            route_flow_events()
+            route_spawner_events()
+        end
+        return
+    end
+
+    if command.type == "ShopRefreshRequested" then
+        player_roster.spend_gold(
+            command.player_id,
+            shop_roster.get_refresh_cost(),
+            "ShopRefresh"
+        )
+        shop_roster.refresh(command.player_id, "Manual")
+        route_player_events()
+        route_shop_events()
+        return
+    end
+
+    if command.type == "ShopLockToggleRequested" then
+        local is_locked = shop_roster.toggle_lock(command.player_id)
+        route_shop_events()
+        return is_locked
+    end
+
+    if command.type == "ShopUpgradeRequested" then
+        local upgrade_cost = shop_roster.get_upgrade_cost(command.player_id)
+        player_roster.spend_gold(
+            command.player_id,
+            upgrade_cost,
+            "ShopUpgrade"
+        )
+        local deployment_limit = shop_roster.upgrade(command.player_id)
+        piece_roster.set_deployment_limit(command.player_id, deployment_limit)
+        route_player_events()
+        route_shop_events()
+        route_piece_events()
+        return
+    end
+
+    if command.type == "ShopPurchaseRequested" then
+        local offer = shop_roster.get_offer(command.player_id, command.slot_index)
+
+        -- 先验证备战区空间，再扣费和锁定商品，保证购买命令失败时不产生部分状态。
+        if not piece_roster.can_grant_piece(command.player_id) then
+            error("Bench capacity reached for player: " .. command.player_id)
+        end
+
+        player_roster.spend_gold(command.player_id, offer.cost, "PiecePurchase")
+        local piece_id = shop_roster.purchase(command.player_id, command.slot_index)
+        local piece_instance_id = piece_roster.grant_piece(command.player_id, piece_id)
+        route_player_events()
+        route_shop_events()
+        route_piece_events()
+        return piece_instance_id
+    end
+
+    if command.type == "PieceSellRequested" then
+        local sell_value = piece_roster.sell_piece(
+            command.player_id,
+            command.piece_instance_id
+        )
+        player_roster.grant_gold(command.player_id, sell_value, "PieceSale")
+        route_piece_events()
+        route_player_events()
+        return sell_value
+    end
+
+    piece_roster.handle_event(command)
+    route_piece_events()
+end
+
+function M.get_flow_snapshot()
+    return flow.get_snapshot()
+end
+
+function M.get_board_snapshot()
+    return board_snapshot.get_snapshot()
+end
+
+function M.get_wave_spawner_snapshot()
+    return wave_spawner.get_snapshot()
+end
+
+function M.get_enemy_roster_snapshot()
+    return enemy_roster.get_snapshot()
+end
+
+function M.get_piece_roster_snapshot()
+    return piece_roster.get_snapshot()
+end
+
+function M.get_player_roster_snapshot()
+    return player_roster.get_snapshot()
+end
+
+function M.get_shop_snapshot(player_id)
+    return shop_roster.get_snapshot(player_id)
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.shutdown()
+    is_wave_spawn_completed = false
+    is_combat_active = false
+    is_started = false
+    flow.shutdown()
+    wave_spawner.shutdown()
+    enemy_roster.shutdown()
+    leak_resolver.shutdown()
+    player_roster.shutdown()
+    shop_roster.shutdown()
+    enemy_attack_planner.shutdown()
+    block_resolver.shutdown()
+    piece_attack_planner.shutdown()
+    piece_roster.shutdown()
+    pending_events = {}
+end
+
+return M

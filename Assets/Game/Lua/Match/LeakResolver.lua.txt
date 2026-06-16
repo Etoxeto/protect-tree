@@ -1,0 +1,232 @@
+local player_config = require("Match.PlayerConfig")
+
+local M = {}
+
+local active_player_configs = {}
+
+local ordered_player_ids = {}          -- 保存稳定的玩家顺序。确保快照、结算事件和未来网络同步顺序固定。
+local current_wave = 0
+local is_resolved = false
+
+local leaked_enemy_ids_by_player = {}  -- 记录每名玩家漏掉的敌人
+local leak_owner_by_enemy_id = {}      -- 通过enmey_id找出漏怪者
+local rescued_enemy_ids = {}           -- 联防中消灭的敌人
+local pending_events = {}
+
+local function require_positive_integer(value, field_name)
+    if type(value) ~= "number"
+    or value <= 0
+    or value % 1 ~= 0 then
+        error(
+            field_name
+            .. " must be a positive integer: "
+            .. tostring(value)
+        )
+    end
+end
+
+local function reset_wave_records()
+    leaked_enemy_ids_by_player = {}
+    leak_owner_by_enemy_id = {}
+    rescued_enemy_ids = {}
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        leaked_enemy_ids_by_player[player_id] = {}
+    end
+end
+
+local function reset(session_options)
+    active_player_configs, ordered_player_ids =
+        player_config.get_active_player_configs(session_options)
+    current_wave = 0
+    is_resolved = true
+    pending_events = {}
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        require_positive_integer(player_id, "player_id")
+    end
+
+    reset_wave_records()
+end
+
+local function require_active_wave(event_wave)
+    if current_wave == 0 then
+        error("No leak-resolution wave has begun")
+    end
+
+    if is_resolved then
+        error("Current leak-resolution wave is already resolved")
+    end
+
+    if event_wave ~= current_wave then
+        error(
+            "Event wave does not match current wave: "
+            .. tostring(event_wave)
+        )
+    end
+end
+
+local function calculate_player_counts(player_id)
+    local leaked_enemy_ids = leaked_enemy_ids_by_player[player_id]
+    local initial_leak_count = #leaked_enemy_ids
+    local rescued_count = 0
+
+    for _, enemy_instance_id in ipairs(leaked_enemy_ids) do
+        if rescued_enemy_ids[enemy_instance_id] then
+            rescued_count = rescued_count + 1
+        end
+    end
+
+    return initial_leak_count, rescued_count,
+        initial_leak_count - rescued_count
+end
+
+function M.start(session_options)
+    reset(session_options)
+end
+
+function M.begin_wave(wave)
+    require_positive_integer(wave, "wave")
+
+    if current_wave > 0 and not is_resolved then
+        error(
+            "Cannot begin wave before resolving current wave: "
+            .. current_wave
+        )
+    end
+
+    if wave <= current_wave then
+        error(
+            "New wave must be greater than current wave: "
+            .. wave
+        )
+    end
+
+    current_wave = wave
+    is_resolved = false
+    reset_wave_records()
+end
+
+
+function M.handle_event(event)
+    if event.type == "EnemyReachedEndpoint" then
+        require_active_wave(event.wave)
+
+        local player_id = event.target_player_id
+        local enemy_instance_id = event.enemy_instance_id
+
+        require_positive_integer(player_id, "target_player_id")
+        require_positive_integer(
+            enemy_instance_id,
+            "enemy_instance_id"
+        )
+
+        if leaked_enemy_ids_by_player[player_id] == nil then
+            error("Player not found: " .. player_id)
+        end
+
+        if leak_owner_by_enemy_id[enemy_instance_id] ~= nil then
+            error(
+                "Enemy leak already recorded: "
+                .. enemy_instance_id
+            )
+        end
+
+        table.insert(
+            leaked_enemy_ids_by_player[player_id],
+            enemy_instance_id
+        )
+
+        leak_owner_by_enemy_id[enemy_instance_id] = player_id
+        return
+    end
+
+    if event.type == "LeakedEnemyRescued" then
+        require_active_wave(event.wave)
+
+        local enemy_instance_id = event.enemy_instance_id
+
+        require_positive_integer(
+            enemy_instance_id,
+            "enemy_instance_id"
+        )
+
+        if leak_owner_by_enemy_id[enemy_instance_id] == nil then
+            error(
+                "Cannot rescue unrecorded leaked enemy: "
+                .. enemy_instance_id
+            )
+        end
+
+        if rescued_enemy_ids[enemy_instance_id] then
+            error(
+                "Leaked enemy already rescued: "
+                .. enemy_instance_id
+            )
+        end
+
+        rescued_enemy_ids[enemy_instance_id] = true
+    end
+end
+
+function M.resolve_wave()
+    if current_wave == 0 then
+        error("No leak-resolution wave has begun")
+    end
+
+    if is_resolved then
+        return false
+    end
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        local initial_count, rescued_count, final_count =
+            calculate_player_counts(player_id)
+
+        table.insert(pending_events, {
+            type = "PlayerLeakResolved",
+            player_id = player_id,
+            wave = current_wave,
+            initial_leak_count = initial_count,
+            rescued_count = rescued_count,
+            final_leak_count = final_count,
+        })
+    end
+
+    is_resolved = true
+    return true
+end
+
+function M.get_snapshot()
+    local players = {}
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        local initial_count, rescued_count, final_count =
+            calculate_player_counts(player_id)
+
+        table.insert(players, {
+            player_id = player_id,
+            initial_leak_count = initial_count,
+            rescued_count = rescued_count,
+            final_leak_count = final_count,
+        })
+    end
+
+    return {
+        wave = current_wave,
+        is_resolved = is_resolved,
+        players = players,
+    }
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.shutdown()
+    active_player_configs = {}
+    reset()
+end
+
+return M

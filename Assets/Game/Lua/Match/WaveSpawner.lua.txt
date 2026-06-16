@@ -1,0 +1,143 @@
+local M  ={}
+local waves = require("Config.Waves")
+local enemy_configs = require("Config.Enemies")
+local board = require("Config.Board")
+
+local current_wave = 0
+local enemy_id = nil
+local route_id = 0
+local remaining_count = 0  -- 该波次待刷怪数
+local spawn_index = 0  -- 已发出的生成请求数
+local interval_seconds = 0   -- 刷怪CD
+local seconds_until_next_spawn = 0
+local is_active = false
+local pending_events = {} -- 已产生、尚未被外部消费的事件
+
+local function reset_spawn_plan()
+    current_wave = 0
+    enemy_id = nil
+    route_id = 0
+    remaining_count = 0
+    spawn_index = 0
+    interval_seconds = 0
+    seconds_until_next_spawn = 0
+    is_active = false
+end
+
+function M.start()
+    reset_spawn_plan()
+    pending_events = {}
+end
+
+function M.handle_event(event)
+    if event.type ~= "PhaseChanged" then
+        return
+    end
+    if event.phase ~= "Battle" and event.phase ~= "BossBattle" then
+        reset_spawn_plan()
+        return
+    end
+
+    local config = waves[event.wave]
+
+    if config == nil then
+        error("Wave config not found: " .. event.wave)
+    end
+
+    -- 波次开始时立即验证内容引用，避免生成到一半才发现敌人配置缺失。
+    local enemy_config = enemy_configs[config.enemy_id]
+    if enemy_config == nil then
+        error("Wave enemy config not found: " .. tostring(config.enemy_id))
+    end
+
+    if board.routes[config.route_id] == nil then
+        error("Wave route config not found: " .. tostring(config.route_id))
+    end
+
+    local expects_boss = event.phase == "BossBattle"
+    if (enemy_config.is_boss == true) ~= expects_boss then
+        error("Wave enemy type does not match battle phase: " .. config.enemy_id)
+    end
+
+    if expects_boss and config.count ~= 1 then
+        error("Boss wave must spawn exactly one enemy")
+    end
+
+    current_wave = event.wave
+    enemy_id = config.enemy_id
+    route_id = config.route_id
+    remaining_count = config.count
+    spawn_index = 0
+    interval_seconds = config.interval_seconds
+    seconds_until_next_spawn = 0
+    is_active = remaining_count > 0
+
+end
+
+local function request_enemy_spawn()
+    spawn_index = spawn_index + 1
+    remaining_count = remaining_count - 1
+
+    table.insert(pending_events, {
+        type = "EnemySpawnRequested",
+        wave = current_wave,
+        enemy_id = enemy_id,
+        route_id = route_id,
+        spawn_index = spawn_index,
+    })
+end
+
+local function complete_spawn_plan()
+    is_active = false
+    seconds_until_next_spawn = 0
+
+    table.insert(pending_events, {
+        type = "WaveSpawnCompleted",
+        wave = current_wave,
+    })
+end
+
+function M.update(delta_time)
+    if not is_active then
+        return
+    end
+    seconds_until_next_spawn = seconds_until_next_spawn - delta_time
+
+    while is_active and seconds_until_next_spawn <= 0 do
+        request_enemy_spawn()
+    
+        if remaining_count <= 0 then
+            complete_spawn_plan()
+        else
+            seconds_until_next_spawn =
+                seconds_until_next_spawn + interval_seconds
+        end
+    end
+
+end
+
+function M.get_snapshot()
+    return {
+        is_active = is_active,
+        wave = current_wave,
+        enemy_id = enemy_id,
+        route_id = route_id,
+        remaining_count = remaining_count,
+        next_spawn_index = spawn_index + 1,
+        seconds_until_next_spawn =
+            math.max(seconds_until_next_spawn, 0),
+    }
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.shutdown()
+    reset_spawn_plan()
+    pending_events = {}
+end
+
+return M

@@ -1,0 +1,7 @@
+return {
+    normal_wave_count = 5,
+    boss_wave = 6,
+    preparation_seconds = 30,
+    boss_preparation_seconds = 30,
+    settlement_seconds = 2,
+}

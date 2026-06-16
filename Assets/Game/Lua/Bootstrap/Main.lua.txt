@@ -1,0 +1,206 @@
+local M = {}
+local lifecycle_demo_module = "Bootstrap.LifecycleDemo"
+local lifecycle_demo = require(lifecycle_demo_module)
+local script_version = require("Config.ScriptVersion")
+local session = require("Match.Session")
+
+M.name = "Protect Tree Lua Bootstrap"
+
+local max_players = CS.ProtectTree.Runtime.ProjectRuntime.MaxSupportedPlayers
+print("[ProtectTree][Lua] Bootstrap.Main loaded")
+print("[ProtectTree][Lua] Script version: " .. script_version)
+print("[ProtectTree][Lua] Max players from C#: " .. max_players)
+
+function M.build_welcome(player_name)
+    return "Welcome " .. player_name .. ", message built by Lua"
+end
+
+function M.start()
+    lifecycle_demo.start()
+    session.start()
+end
+
+function M.start_local_multiplayer(player_count)
+    if type(player_count) ~= "number"
+        or player_count < 1
+        or player_count % 1 ~= 0 then
+        error("player_count must be a positive integer")
+    end
+
+    if player_count > max_players then
+        error("player_count exceeds max supported players: " .. player_count)
+    end
+
+    local player_ids = {}
+    for player_id = 1, player_count do
+        table.insert(player_ids, player_id)
+    end
+
+    -- 该入口仅用于本地多人原型/测试：重建权威 Session，不改变 Lua 环境和生命周期实验模块。
+    session.shutdown()
+    session.start({
+        player_ids = player_ids,
+    })
+end
+
+function M.update(delta_time)
+    lifecycle_demo.update(delta_time)
+    session.update(delta_time)
+end
+
+function M.get_match_snapshot()
+    return session.get_flow_snapshot()
+end
+
+function M.get_board_snapshot()
+    return session.get_board_snapshot()
+end
+
+function M.drain_match_events()
+    return session.drain_events()
+end
+
+function M.get_wave_spawner_snapshot()
+    return session.get_wave_spawner_snapshot()
+end
+
+function M.get_enemy_roster_snapshot()
+    return session.get_enemy_roster_snapshot()
+end
+
+function M.get_piece_roster_snapshot()
+    return session.get_piece_roster_snapshot()
+end
+
+function M.get_player_roster_snapshot()
+    return session.get_player_roster_snapshot()
+end
+
+function M.get_shop_snapshot(player_id)
+    return session.get_shop_snapshot(player_id)
+end
+
+function M.grant_piece(player_id, piece_id)
+    return session.grant_piece(player_id, piece_id)
+end
+
+function M.grant_overflow_piece(player_id, piece_id)
+    -- 仅供赠送、羁绊和特殊奖励等额外来源使用；普通商店购买不使用临时备战区。
+    return session.grant_overflow_piece(player_id, piece_id)
+end
+
+function M.deploy_piece(player_id, piece_instance_id, cell_id)
+    -- Unity 只提交固定格部署意图，最终占格验证仍由 Lua 权威状态完成。
+    session.handle_command({
+        type = "PieceDeployRequested",
+        player_id = player_id,
+        piece_instance_id = piece_instance_id,
+        cell_id = cell_id,
+    })
+end
+
+function M.bench_piece(player_id, piece_instance_id)
+    session.handle_command({
+        type = "PieceBenchRequested",
+        player_id = player_id,
+        piece_instance_id = piece_instance_id,
+    })
+end
+
+function M.place_piece(player_id, piece_instance_id, cell_id, facing)
+    -- 拖动部署最终只提交一次，目标格与战场朝向由 Lua 在同一命令中验证。
+    session.handle_command({
+        type = "PiecePlaceRequested",
+        player_id = player_id,
+        piece_instance_id = piece_instance_id,
+        cell_id = cell_id,
+        facing = facing,
+    })
+end
+
+function M.sell_piece(player_id, piece_instance_id)
+    return session.handle_command({
+        type = "PieceSellRequested",
+        player_id = player_id,
+        piece_instance_id = piece_instance_id,
+    })
+end
+
+function M.set_piece_facing(player_id, piece_instance_id, facing)
+    session.handle_command({
+        type = "PieceFacingRequested",
+        player_id = player_id,
+        piece_instance_id = piece_instance_id,
+        facing = facing,
+    })
+end
+
+function M.refresh_shop(player_id)
+    session.handle_command({
+        type = "ShopRefreshRequested",
+        player_id = player_id,
+    })
+end
+
+function M.toggle_shop_lock(player_id)
+    return session.handle_command({
+        type = "ShopLockToggleRequested",
+        player_id = player_id,
+    })
+end
+
+function M.upgrade_shop(player_id)
+    session.handle_command({
+        type = "ShopUpgradeRequested",
+        player_id = player_id,
+    })
+end
+
+function M.purchase_shop_offer(player_id, slot_index)
+    return session.handle_command({
+        type = "ShopPurchaseRequested",
+        player_id = player_id,
+        slot_index = slot_index,
+    })
+end
+
+function M.set_player_ready(player_id, is_ready)
+    session.handle_command({
+        type = "PlayerReadyRequested",
+        player_id = player_id,
+        is_ready = is_ready,
+    })
+end
+
+function M.shutdown()
+    lifecycle_demo.shutdown()
+    session.shutdown()
+end
+
+function M.reload_module(module_name)
+    if module_name ~= lifecycle_demo_module then
+        error("Module is not reloadable: " .. module_name)
+    end
+
+    local previous_module = lifecycle_demo
+    previous_module.shutdown()
+    package.loaded[module_name] = nil
+
+    local loaded, replacement_or_error = pcall(require, module_name)
+
+    if not loaded then
+        package.loaded[module_name] = previous_module
+        previous_module.start()
+        error("Failed to reload " .. module_name .. ": " .. replacement_or_error)
+    end
+
+    lifecycle_demo = replacement_or_error
+    lifecycle_demo.start()
+end
+
+local sum = CS.ProtectTree.LuaContracts.LuaLearningApi.Add(7, 5)
+local generated_max = CS.ProtectTree.LuaContracts.LuaLearningApi.MaxPlayers
+
+print("[ProtectTree][LuaCallCSharp] sum=" .. sum .. ", max=" .. generated_max)
+
+return M

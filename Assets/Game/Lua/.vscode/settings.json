@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.lua.txt": "lua"
+    },
+    "Lua.workspace.library": [
+        "${workspaceFolder}/Assets/Game/Lua"
+    ],
+    "Lua.diagnostics.globals": [
+        "CS"
+    ]
+}

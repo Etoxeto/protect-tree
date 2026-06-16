@@ -1,0 +1,45 @@
+return {
+    rarity_count = 6,
+    refresh_cost = 2,
+    levels = {
+        [1] = {
+            upgrade_cost = 4,
+            deployment_limit = 2,
+            offer_count = 2,
+            rarity_weights = {
+                100,
+                0,
+                0,
+                0,
+                0,
+                0,
+            },
+        },
+        [2] = {
+            upgrade_cost = 6,
+            deployment_limit = 3,
+            offer_count = 3,
+            rarity_weights = {
+                75,
+                25,
+                0,
+                0,
+                0,
+                0,
+            },
+        },
+        [3] = {
+            upgrade_cost = 0,
+            deployment_limit = 4,
+            offer_count = 4,
+            rarity_weights = {
+                60,
+                30,
+                6,
+                2,
+                1,
+                1,
+            },
+        },
+    },
+}

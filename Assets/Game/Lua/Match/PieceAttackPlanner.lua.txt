@@ -1,0 +1,168 @@
+local M = {}
+local piece_configs = require("Config.Pieces")
+local board_queries = require("Match.BoardQueries")
+
+local current_wave = 0
+local is_active = false
+local seconds_until_attack_by_piece_id = {}
+local pending_events = {}
+
+local function require_positive_integer(value, field_name)
+    if type(value) ~= "number"
+        or value <= 0
+        or value % 1 ~= 0 then
+        error(
+            field_name
+            .. " must be a positive integer: "
+            .. tostring(value)
+        )
+    end
+end
+
+local function require_non_negative_number(value, field_name)
+    if type(value) ~= "number" or value < 0 then
+        error(
+            field_name
+            .. " must be a non-negative number: "
+            .. tostring(value)
+        )
+    end
+end
+
+local function reset()
+    current_wave = 0
+    is_active = false
+    seconds_until_attack_by_piece_id = {}
+    pending_events = {}
+end
+
+local function find_target(piece, enemies)
+    local selected = nil
+    local blocked_enemy_ids = {}
+
+    for _, enemy_instance_id in ipairs(piece.blocked_enemy_instance_ids) do
+        blocked_enemy_ids[enemy_instance_id] = true
+    end
+
+    for _, enemy in ipairs(enemies) do
+        local is_valid =
+            enemy.status == "Alive"
+            and enemy.wave == current_wave
+            and enemy.target_player_id == piece.owner_player_id
+            and board_queries.is_enemy_in_attack_range(
+                piece,
+                enemy,
+                piece_configs[piece.piece_id].attack_range
+            )
+
+        if is_valid then
+            local enemy_is_blocked = blocked_enemy_ids[enemy.instance_id] == true
+            local selected_is_blocked =
+                selected ~= nil
+                and blocked_enemy_ids[selected.instance_id] == true
+
+            -- 目标选择必须完全确定：优先攻击自己阻挡的敌人，
+            -- 其次选择最接近终点者，进度相同再按实例 ID 决定。
+            local is_better =
+                selected == nil
+                or (enemy_is_blocked and not selected_is_blocked)
+                or (
+                    enemy_is_blocked == selected_is_blocked
+                    and enemy.path_progress > selected.path_progress
+                )
+                or (
+                    enemy_is_blocked == selected_is_blocked
+                    and enemy.path_progress == selected.path_progress
+                    and enemy.instance_id < selected.instance_id
+                )
+
+            if is_better then
+                selected = enemy
+            end
+        end
+    end
+
+    return selected
+end
+
+function M.start()
+    reset()
+end
+
+function M.begin_battle(wave)
+    require_positive_integer(wave, "wave")
+
+    if is_active then
+        error("Cannot begin battle while another battle is active")
+    end
+
+    if wave <= current_wave then
+        error("New battle wave must be greater than current wave: " .. wave)
+    end
+
+    current_wave = wave
+    is_active = true
+
+    -- 每轮战斗重新开始计时，使已经部署的棋子在首个战斗 Tick 可立即攻击。
+    seconds_until_attack_by_piece_id = {}
+end
+
+function M.end_battle()
+    is_active = false
+    seconds_until_attack_by_piece_id = {}
+end
+
+function M.update(delta_time, piece_snapshot, enemy_snapshot)
+    if not is_active then
+        return
+    end
+
+    require_non_negative_number(delta_time, "delta_time")
+
+    for _, piece in ipairs(piece_snapshot.pieces) do
+        if piece.location ~= "Board" or piece.status ~= "Active" then
+            seconds_until_attack_by_piece_id[piece.instance_id] = nil
+        else
+            local seconds_until_attack =
+                seconds_until_attack_by_piece_id[piece.instance_id] or 0
+
+            seconds_until_attack = seconds_until_attack - delta_time
+
+            if seconds_until_attack <= 0 then
+                local target = find_target(piece, enemy_snapshot.enemies)
+
+                if target == nil then
+                    -- 没有敌人时保持就绪，敌人出现后的首个 Tick 即可攻击。
+                    seconds_until_attack = 0
+                else
+                    table.insert(pending_events, {
+                        type = "EnemyDamageRequested",
+                        wave = current_wave,
+                        enemy_instance_id = target.instance_id,
+                        source_piece_instance_id = piece.instance_id,
+                        damage = piece.damage,
+                    })
+
+                    -- 将本 Tick 超出的时间带入下一次冷却，避免固定步长造成攻速漂移。
+                    seconds_until_attack =
+                        seconds_until_attack + piece.attack_interval_seconds
+                end
+            end
+
+            seconds_until_attack_by_piece_id[piece.instance_id] =
+                seconds_until_attack
+        end
+    end
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.shutdown()
+    reset()
+end
+
+return M

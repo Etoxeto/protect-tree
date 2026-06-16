@@ -1,0 +1,38 @@
+return {
+    [1] = {
+        enemy_id = "Crab",
+        route_id = 1,
+        count = 3,
+        interval_seconds = 1.0,
+    },
+    [2] = {
+        enemy_id = "Skitter",
+        route_id = 2,
+        count = 4,
+        interval_seconds = 0.8,
+    },
+    [3] = {
+        enemy_id = "Shellback",
+        route_id = 1,
+        count = 5,
+        interval_seconds = 0.6,
+    },
+    [4] = {
+        enemy_id = "Skitter",
+        route_id = 2,
+        count = 6,
+        interval_seconds = 0.5,
+    },
+    [5] = {
+        enemy_id = "Shellback",
+        route_id = 1,
+        count = 6,
+        interval_seconds = 0.5,
+    },
+    [6] = {
+        enemy_id = "AncientGuardian",
+        route_id = 1,
+        count = 1,
+        interval_seconds = 1.0,
+    },
+}

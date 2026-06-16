@@ -1,0 +1,22 @@
+{
+    "name": "ProtectTree.Core.Tests",
+    "rootNamespace": "ProtectTree.Core.Tests",
+    "references": [
+        "ProtectTree.Core"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}
+

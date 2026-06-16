@@ -1,0 +1,23 @@
+{
+    "name": "ProtectTree.Runtime.Tests",
+    "rootNamespace": "ProtectTree.Runtime.Tests",
+    "references": [
+        "ProtectTree.Core",
+        "ProtectTree.Runtime",
+        "XLua.Runtime"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}

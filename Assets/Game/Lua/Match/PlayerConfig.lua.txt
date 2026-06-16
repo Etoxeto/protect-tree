@@ -1,0 +1,71 @@
+local raw_player_config = require("Config.Players")
+
+local M = {}
+
+local function require_positive_integer(value, field_name)
+    if type(value) ~= "number"
+        or value <= 0
+        or value % 1 ~= 0 then
+        error(field_name .. " must be a positive integer: " .. tostring(value))
+    end
+end
+
+local function get_definitions()
+    return raw_player_config.definitions or raw_player_config
+end
+
+local function collect_all_player_ids(definitions)
+    local player_ids = {}
+
+    for player_id in pairs(definitions) do
+        require_positive_integer(player_id, "player_id")
+        table.insert(player_ids, player_id)
+    end
+
+    table.sort(player_ids)
+    return player_ids
+end
+
+local function get_requested_player_ids(options)
+    if options ~= nil and options.player_ids ~= nil then
+        return options.player_ids
+    end
+
+    return raw_player_config.active_player_ids
+end
+
+function M.get_active_player_configs(options)
+    local definitions = get_definitions()
+    local requested_player_ids = get_requested_player_ids(options)
+        or collect_all_player_ids(definitions)
+    local ordered_player_ids = {}
+    local active_configs = {}
+    local seen_player_ids = {}
+
+    if type(requested_player_ids) ~= "table" or #requested_player_ids == 0 then
+        error("active player list must contain at least one player")
+    end
+
+    for _, player_id in ipairs(requested_player_ids) do
+        require_positive_integer(player_id, "player_id")
+
+        if seen_player_ids[player_id] then
+            error("Duplicate active player ID: " .. player_id)
+        end
+
+        local config = definitions[player_id]
+        if config == nil then
+            error("Player config not found: " .. player_id)
+        end
+
+        seen_player_ids[player_id] = true
+        active_configs[player_id] = config
+        table.insert(ordered_player_ids, player_id)
+    end
+
+    -- 权威快照、结算和未来网络同步都依赖稳定玩家顺序。
+    table.sort(ordered_player_ids)
+    return active_configs, ordered_player_ids
+end
+
+return M

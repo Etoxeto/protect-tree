@@ -1,0 +1,94 @@
+local M = {}
+
+local is_active = false
+local seconds_until_attack_by_enemy_id = {}
+local pending_events = {}
+
+local function reset()
+    is_active = false
+    seconds_until_attack_by_enemy_id = {}
+    pending_events = {}
+end
+
+local function get_active_piece(pieces_by_id, piece_instance_id)
+    local piece = pieces_by_id[piece_instance_id]
+
+    if piece ~= nil and piece.status == "Active" then
+        return piece
+    end
+
+    return nil
+end
+
+function M.start()
+    reset()
+end
+
+function M.begin_battle()
+    if is_active then
+        error("EnemyAttackPlanner battle is already active")
+    end
+
+    is_active = true
+    seconds_until_attack_by_enemy_id = {}
+end
+
+function M.end_battle()
+    is_active = false
+    seconds_until_attack_by_enemy_id = {}
+end
+
+function M.update(delta_time, piece_snapshot, enemy_snapshot)
+    if not is_active then
+        return
+    end
+
+    local pieces_by_id = {}
+    for _, piece in ipairs(piece_snapshot.pieces) do
+        pieces_by_id[piece.instance_id] = piece
+    end
+
+    for _, enemy in ipairs(enemy_snapshot.enemies) do
+        local target_piece = get_active_piece(
+            pieces_by_id,
+            enemy.blocked_by_piece_instance_id
+        )
+
+        -- 当前敌人均为近战：只有被地面棋子阻挡时才攻击该棋子。
+        if enemy.status ~= "Alive"
+            or enemy.attack_type ~= "Melee"
+            or target_piece == nil then
+            seconds_until_attack_by_enemy_id[enemy.instance_id] = nil
+        else
+            local seconds_until_attack =
+                seconds_until_attack_by_enemy_id[enemy.instance_id] or 0
+            seconds_until_attack = seconds_until_attack - delta_time
+
+            if seconds_until_attack <= 0 then
+                table.insert(pending_events, {
+                    type = "PieceDamageRequested",
+                    piece_instance_id = target_piece.instance_id,
+                    source_enemy_instance_id = enemy.instance_id,
+                    damage = enemy.attack_damage,
+                })
+                seconds_until_attack =
+                    seconds_until_attack + enemy.attack_interval_seconds
+            end
+
+            seconds_until_attack_by_enemy_id[enemy.instance_id] =
+                seconds_until_attack
+        end
+    end
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.shutdown()
+    reset()
+end
+
+return M

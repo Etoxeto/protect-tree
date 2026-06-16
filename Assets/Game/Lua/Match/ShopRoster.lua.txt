@@ -1,0 +1,402 @@
+local shop_config = require("Config.Shop")
+local player_config = require("Match.PlayerConfig")
+local piece_configs = require("Config.Pieces")
+local synergy_configs = require("Config.Synergies")
+
+local M = {}
+
+local active_player_configs = {}
+local shops_by_player_id = {}
+local ordered_player_ids = {}
+local piece_pools_by_rarity = {}
+local pending_events = {}
+
+local function require_positive_integer(value, field_name)
+    if type(value) ~= "number" or value <= 0 or value % 1 ~= 0 then
+        error(field_name .. " must be a positive integer: " .. tostring(value))
+    end
+end
+
+local function require_non_negative_integer(value, field_name)
+    if type(value) ~= "number" or value < 0 or value % 1 ~= 0 then
+        error(field_name .. " must be a non-negative integer: " .. tostring(value))
+    end
+end
+
+local function require_non_empty_string(value, field_name)
+    if type(value) ~= "string" or value == "" then
+        error(field_name .. " must be a non-empty string")
+    end
+end
+
+local function get_shop(player_id)
+    local shop = shops_by_player_id[player_id]
+
+    if shop == nil then
+        error("Shop player not found: " .. tostring(player_id))
+    end
+
+    return shop
+end
+
+local function get_level_config(level)
+    local config = shop_config.levels[level]
+
+    if config == nil then
+        error("Shop level config not found: " .. tostring(level))
+    end
+
+    return config
+end
+
+local function build_piece_pools()
+    piece_pools_by_rarity = {}
+    for rarity = 1, shop_config.rarity_count do
+        piece_pools_by_rarity[rarity] = {}
+    end
+
+    for piece_id, config in pairs(piece_configs) do
+        require_non_empty_string(piece_id, "piece_id")
+        require_positive_integer(config.rarity, "piece_rarity")
+        require_non_negative_integer(config.cost, "piece_cost")
+        require_non_empty_string(config.display_name, "piece_display_name")
+        require_non_empty_string(config.portrait, "piece_portrait")
+        require_non_empty_string(config.class_id, "piece_class_id")
+
+        if config.rarity > shop_config.rarity_count then
+            error("Piece rarity exceeds shop rarity count: " .. piece_id)
+        end
+
+        if type(config.synergies) ~= "table" or #config.synergies == 0 then
+            error("Shop piece must contain at least one synergy: " .. piece_id)
+        end
+
+        for _, synergy_id in ipairs(config.synergies) do
+            local definition = synergy_configs.definitions[synergy_id]
+            if definition == nil then
+                error("Shop piece synergy config not found: " .. synergy_id)
+            end
+            require_non_empty_string(definition.display_name, "synergy_display_name")
+        end
+
+        table.insert(piece_pools_by_rarity[config.rarity], piece_id)
+    end
+
+    -- pairs 的遍历顺序不稳定；排序后相同输入才能在单机与联机权威端生成同一商店。
+    for _, pool in ipairs(piece_pools_by_rarity) do
+        table.sort(pool)
+    end
+end
+
+local function select_rarity(level, refresh_index, slot_index)
+    local weights = get_level_config(level).rarity_weights
+    -- Demo 使用确定性掷点，保证相同输入必定生成相同商店；联网时可替换为服务端种子随机。
+    local roll = ((refresh_index * 37 + slot_index * 17 - 1) % 100) + 1
+    local cumulative_weight = 0
+    local selected_rarity = nil
+
+    for rarity, weight in ipairs(weights) do
+        cumulative_weight = cumulative_weight + weight
+        if roll <= cumulative_weight then
+            selected_rarity = rarity
+            break
+        end
+    end
+
+    if selected_rarity == nil then
+        error("Shop rarity weights must total 100")
+    end
+
+    if #piece_pools_by_rarity[selected_rarity] > 0 then
+        return selected_rarity
+    end
+
+    -- 尚未配置棋子的高品质向低品质回退；未来添加该品质棋子后，其预留权重会自动生效。
+    for rarity = selected_rarity - 1, 1, -1 do
+        if #piece_pools_by_rarity[rarity] > 0 then
+            return rarity
+        end
+    end
+
+    for rarity = selected_rarity + 1, shop_config.rarity_count do
+        if #piece_pools_by_rarity[rarity] > 0 then
+            return rarity
+        end
+    end
+
+    error("Shop has no configured pieces")
+end
+
+local function copy_synergies(piece_config)
+    local copied_synergies = {}
+
+    for _, synergy_id in ipairs(piece_config.synergies) do
+        table.insert(copied_synergies, {
+            synergy_id = synergy_id,
+            display_name = synergy_configs.definitions[synergy_id].display_name,
+        })
+    end
+
+    return copied_synergies
+end
+
+local function build_offers(refresh_index, level)
+    local offers = {}
+
+    for slot_index = 1, get_level_config(level).offer_count do
+        local rarity = select_rarity(level, refresh_index, slot_index)
+        local pool = piece_pools_by_rarity[rarity]
+        local pool_index = ((refresh_index + slot_index - 2) % #pool) + 1
+        local piece_id = pool[pool_index]
+        local piece_config = piece_configs[piece_id]
+
+        table.insert(offers, {
+            slot_index = slot_index,
+            piece_id = piece_id,
+            display_name = piece_config.display_name,
+            portrait = piece_config.portrait,
+            class_id = piece_config.class_id,
+            rarity = rarity,
+            cost = piece_config.cost,
+            synergies = copy_synergies(piece_config),
+            is_sold = false,
+        })
+    end
+
+    return offers
+end
+
+local function copy_offer(offer)
+    local synergies = {}
+    for _, synergy in ipairs(offer.synergies) do
+        table.insert(synergies, {
+            synergy_id = synergy.synergy_id,
+            display_name = synergy.display_name,
+        })
+    end
+
+    return {
+        slot_index = offer.slot_index,
+        piece_id = offer.piece_id,
+        display_name = offer.display_name,
+        portrait = offer.portrait,
+        class_id = offer.class_id,
+        rarity = offer.rarity,
+        cost = offer.cost,
+        synergies = synergies,
+        is_sold = offer.is_sold,
+    }
+end
+
+local function copy_rarity_weights(level)
+    local copied_weights = {}
+
+    for rarity, weight in ipairs(get_level_config(level).rarity_weights) do
+        table.insert(copied_weights, {
+            rarity = rarity,
+            weight = weight,
+        })
+    end
+
+    return copied_weights
+end
+
+local function validate_config()
+    require_positive_integer(shop_config.rarity_count, "rarity_count")
+    require_non_negative_integer(shop_config.refresh_cost, "refresh_cost")
+
+    if type(shop_config.levels) ~= "table" or #shop_config.levels == 0 then
+        error("Shop must contain at least one level")
+    end
+
+    for level, config in ipairs(shop_config.levels) do
+        require_non_negative_integer(config.upgrade_cost, "upgrade_cost")
+        require_positive_integer(config.deployment_limit, "deployment_limit")
+        require_positive_integer(config.offer_count, "offer_count")
+
+        if level < #shop_config.levels and config.upgrade_cost == 0 then
+            error("Non-maximum shop level must have an upgrade cost")
+        end
+
+        if type(config.rarity_weights) ~= "table"
+            or #config.rarity_weights ~= shop_config.rarity_count then
+            error("Shop level must contain all rarity weights: " .. level)
+        end
+
+        local total_weight = 0
+        for _, weight in ipairs(config.rarity_weights) do
+            require_non_negative_integer(weight, "rarity_weight")
+            total_weight = total_weight + weight
+        end
+
+        if total_weight ~= 100 then
+            error("Shop rarity weights must total 100 at level: " .. level)
+        end
+    end
+end
+
+function M.start(session_options)
+    shops_by_player_id = {}
+    ordered_player_ids = {}
+    pending_events = {}
+    validate_config()
+    build_piece_pools()
+
+    active_player_configs, ordered_player_ids =
+        player_config.get_active_player_configs(session_options)
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        local active_player_config = active_player_configs[player_id]
+        if active_player_config.starting_deployment_limit
+            ~= shop_config.levels[1].deployment_limit then
+            error("Starting deployment limit must match shop level one")
+        end
+
+        shops_by_player_id[player_id] = {
+            player_id = player_id,
+            level = 1,
+            refresh_index = 1,
+            is_locked = false,
+            offers = build_offers(1, 1),
+        }
+    end
+end
+
+function M.get_refresh_cost()
+    return shop_config.refresh_cost
+end
+
+function M.get_offer(player_id, slot_index)
+    local shop = get_shop(player_id)
+    local offer = shop.offers[slot_index]
+
+    if offer == nil then
+        error("Shop offer not found: " .. tostring(slot_index))
+    end
+
+    if offer.is_sold then
+        error("Shop offer is already sold: " .. slot_index)
+    end
+
+    return copy_offer(offer)
+end
+
+function M.refresh(player_id, reason)
+    local shop = get_shop(player_id)
+
+    shop.refresh_index = shop.refresh_index + 1
+    shop.offers = build_offers(shop.refresh_index, shop.level)
+
+    table.insert(pending_events, {
+        type = "ShopRefreshed",
+        player_id = player_id,
+        refresh_index = shop.refresh_index,
+        reason = reason or "Manual",
+    })
+end
+
+function M.refresh_if_unlocked(player_id, reason)
+    if get_shop(player_id).is_locked then
+        return false
+    end
+
+    M.refresh(player_id, reason)
+    return true
+end
+
+function M.toggle_lock(player_id)
+    local shop = get_shop(player_id)
+    shop.is_locked = not shop.is_locked
+
+    table.insert(pending_events, {
+        type = "ShopLockChanged",
+        player_id = player_id,
+        is_locked = shop.is_locked,
+    })
+
+    return shop.is_locked
+end
+
+function M.get_upgrade_cost(player_id)
+    local shop = get_shop(player_id)
+
+    if shop.level >= #shop_config.levels then
+        error("Shop is already at maximum level: " .. player_id)
+    end
+
+    return get_level_config(shop.level).upgrade_cost
+end
+
+function M.upgrade(player_id)
+    local shop = get_shop(player_id)
+    local cost = M.get_upgrade_cost(player_id)
+    local previous_level = shop.level
+    shop.level = shop.level + 1
+    local deployment_limit = get_level_config(shop.level).deployment_limit
+
+    table.insert(pending_events, {
+        type = "ShopUpgraded",
+        player_id = player_id,
+        previous_level = previous_level,
+        level = shop.level,
+        cost = cost,
+        deployment_limit = deployment_limit,
+    })
+
+    return deployment_limit
+end
+
+function M.purchase(player_id, slot_index)
+    local offer = M.get_offer(player_id, slot_index)
+    shops_by_player_id[player_id].offers[slot_index].is_sold = true
+
+    table.insert(pending_events, {
+        type = "ShopOfferPurchased",
+        player_id = player_id,
+        slot_index = slot_index,
+        piece_id = offer.piece_id,
+        cost = offer.cost,
+    })
+
+    return offer.piece_id
+end
+
+function M.get_snapshot(player_id)
+    local shop = get_shop(player_id)
+    local is_max_level = shop.level >= #shop_config.levels
+
+    local offers = {}
+    for _, offer in ipairs(shop.offers) do
+        table.insert(offers, copy_offer(offer))
+    end
+
+    return {
+        player_id = player_id,
+        level = shop.level,
+        max_level = #shop_config.levels,
+        can_upgrade = not is_max_level,
+        upgrade_cost = is_max_level
+            and 0
+            or get_level_config(shop.level).upgrade_cost,
+        refresh_cost = shop_config.refresh_cost,
+        is_locked = shop.is_locked,
+        rarity_weights = copy_rarity_weights(shop.level),
+        offers = offers,
+    }
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.shutdown()
+    active_player_configs = {}
+    shops_by_player_id = {}
+    ordered_player_ids = {}
+    piece_pools_by_rarity = {}
+    pending_events = {}
+end
+
+return M

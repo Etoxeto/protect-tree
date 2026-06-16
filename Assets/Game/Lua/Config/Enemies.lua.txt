@@ -1,0 +1,36 @@
+return {
+    Crab = {
+        max_health = 10,
+        path_speed = 0.05,
+        attack_damage = 3,
+        attack_interval_seconds = 1.0,
+        attack_type = "Melee",
+        route_id = 1,
+    },
+    -- Skitter 与 Shellback 是用于验证不同敌人节奏的占位内容。
+    Skitter = {
+        max_health = 6,
+        path_speed = 0.4,
+        attack_damage = 2,
+        attack_interval_seconds = 0.7,
+        attack_type = "Melee",
+        route_id = 1,
+    },
+    Shellback = {
+        max_health = 24,
+        path_speed = 0.15,
+        attack_damage = 5,
+        attack_interval_seconds = 1.5,
+        attack_type = "Melee",
+        route_id = 1,
+    },
+    AncientGuardian = {
+        max_health = 120,
+        path_speed = 0.05,
+        attack_damage = 8,
+        attack_interval_seconds = 1.2,
+        attack_type = "Melee",
+        route_id = 1,
+        is_boss = true,
+    },
+}

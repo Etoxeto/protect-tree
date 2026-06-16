@@ -1,0 +1,31 @@
+local M = {}
+
+local elapsed_seconds = 0
+local update_count = 0
+local has_printed_one_second = false
+
+function M.start()
+    print("[ProtectTree][Lua Lifecycle] new start")
+end
+
+function M.update(delta_time)
+    elapsed_seconds = elapsed_seconds + delta_time
+    update_count = update_count + 1
+
+    if not has_printed_one_second and elapsed_seconds >= 1 then
+        has_printed_one_second = true
+        print("[ProtectTree][Lua Lifecycle] reached one second")
+    end
+end
+
+function M.shutdown()
+    print(
+        "[ProtectTree][Lua Lifecycle] shutdown, updates="
+        .. update_count
+        .. ", elapsed="
+        .. elapsed_seconds
+        .. "old shut down"
+    )
+end
+
+return M

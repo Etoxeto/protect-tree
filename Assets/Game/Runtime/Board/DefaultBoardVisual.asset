@@ -1,0 +1,1147 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0c597213b83b0764b91adba3b8515609, type: 3}
+  m_Name: DefaultBoardVisual
+  m_EditorClassIdentifier: 
+  groundTopMaterial: {fileID: 0}
+  highGroundTopMaterial: {fileID: 0}
+  obstacleTopMaterial: {fileID: 0}
+  frontSideMaterial: {fileID: 0}
+  leftSideMaterial: {fileID: 0}
+  rightSideMaterial: {fileID: 0}
+  selectedFillMaterial: {fileID: 0}
+  selectedOutlineMaterial: {fileID: 0}
+  unitPreviewMaterial: {fileID: 0}
+  groundTopColor: {r: 0.75, g: 0.75, b: 0.75, a: 1}
+  highGroundTopColor: {r: 0.95, g: 0.8, b: 0.25, a: 1}
+  obstacleTopColor: {r: 0.9, g: 0.25, b: 0.25, a: 1}
+  frontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+  leftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+  rightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  materialEntries:
+  - visualKey: reserve
+    topMaterial: {fileID: 0}
+    frontSideMaterial: {fileID: 0}
+    leftSideMaterial: {fileID: 0}
+    rightSideMaterial: {fileID: 0}
+    fallbackTopColor: {r: 0.16, g: 0.62, b: 0.92, a: 1}
+    fallbackFrontSideColor: {r: 0.08, g: 0.32, b: 0.5, a: 1}
+    fallbackLeftSideColor: {r: 0.07, g: 0.27, b: 0.44, a: 1}
+    fallbackRightSideColor: {r: 0.1, g: 0.38, b: 0.58, a: 1}
+  - visualKey: temporary_reserve
+    topMaterial: {fileID: 0}
+    frontSideMaterial: {fileID: 0}
+    leftSideMaterial: {fileID: 0}
+    rightSideMaterial: {fileID: 0}
+    fallbackTopColor: {r: 0.65, g: 0.35, b: 0.85, a: 1}
+    fallbackFrontSideColor: {r: 0.34, g: 0.17, b: 0.47, a: 1}
+    fallbackLeftSideColor: {r: 0.28, g: 0.14, b: 0.4, a: 1}
+    fallbackRightSideColor: {r: 0.4, g: 0.2, b: 0.54, a: 1}
+  - visualKey: spawn
+    topMaterial: {fileID: 0}
+    frontSideMaterial: {fileID: 0}
+    leftSideMaterial: {fileID: 0}
+    rightSideMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 0.48, b: 0.12, a: 1}
+    fallbackFrontSideColor: {r: 0.55, g: 0.24, b: 0.06, a: 1}
+    fallbackLeftSideColor: {r: 0.48, g: 0.2, b: 0.05, a: 1}
+    fallbackRightSideColor: {r: 0.64, g: 0.29, b: 0.08, a: 1}
+  - visualKey: endpoint
+    topMaterial: {fileID: 0}
+    frontSideMaterial: {fileID: 0}
+    leftSideMaterial: {fileID: 0}
+    rightSideMaterial: {fileID: 0}
+    fallbackTopColor: {r: 0.2, g: 0.9, b: 0.35, a: 1}
+    fallbackFrontSideColor: {r: 0.08, g: 0.48, b: 0.17, a: 1}
+    fallbackLeftSideColor: {r: 0.06, g: 0.4, b: 0.14, a: 1}
+    fallbackRightSideColor: {r: 0.1, g: 0.56, b: 0.21, a: 1}
+  visualGridWidth: 11
+  visualGridHeight: 7
+  cellOverrides:
+  - gridX: 1
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 2
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 524287f605cfabe4db8924b0c302279b, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 1
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 32d3ea26de1094f4cb33426f269bcf4d, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: 8c570788656a7b94b8df45dd43dd7c63, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 0
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4b1bab3b28434e4ebe7a6126710e943, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 1
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 2
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 3
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 4
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 5
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 6
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 7
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 8
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 9
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5aaba487cb3c0f84799cb7612e567ebc, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 10
+    gridY: 1
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4b1bab3b28434e4ebe7a6126710e943, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 0
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 1
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 2
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 3
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 4
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 5
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 6
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 7
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 8
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 9
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 10
+    gridY: 0
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 5b4cbb867fef91c4bb0d7e3f6e6ef2da, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: c8f0062c0e2e5c84badabfeb73d863e5, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 0
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 1
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 0
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 2100000, guid: 81d5acdb8f7e9d84f9de0a4bb57646a8, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 2
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: fd0b6088f9bfae544b8228e51978930d, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: 81d5acdb8f7e9d84f9de0a4bb57646a8, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 1
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 0
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 2
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 3d60339ca87d51842be8554166b7cf09, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 0
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 0
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 1
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 2
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 3
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 0}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 0}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 8
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: f4ea1687d9298dc42919b81b31a81024, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 8
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: f4ea1687d9298dc42919b81b31a81024, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 8
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: f4ea1687d9298dc42919b81b31a81024, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 7
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: c47f0efb4587ad3468e5f537f298c9e8, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 2100000, guid: 81d5acdb8f7e9d84f9de0a4bb57646a8, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 10
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: fd0b6088f9bfae544b8228e51978930d, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.3962264, g: 0.28284088, b: 0.09531861, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 10
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 524287f605cfabe4db8924b0c302279b, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 7
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 7
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: c47f0efb4587ad3468e5f537f298c9e8, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 7
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: c47f0efb4587ad3468e5f537f298c9e8, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 8
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: c47f0efb4587ad3468e5f537f298c9e8, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 9
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: c47f0efb4587ad3468e5f537f298c9e8, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 9
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 9
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: c47f0efb4587ad3468e5f537f298c9e8, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 9
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 4
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 32d3ea26de1094f4cb33426f269bcf4d, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: 8c570788656a7b94b8df45dd43dd7c63, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 5
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4b1bab3b28434e4ebe7a6126710e943, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: 8c570788656a7b94b8df45dd43dd7c63, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 6
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 524287f605cfabe4db8924b0c302279b, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 7
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 9d0857ac80de8bc419e6b3ea51722570, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 8
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 524287f605cfabe4db8924b0c302279b, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 9
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: fd0b6088f9bfae544b8228e51978930d, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 10
+    gridY: 6
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 524287f605cfabe4db8924b0c302279b, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 6
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: a506e471003b61f49a87f54dde745b3e, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 5
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: a506e471003b61f49a87f54dde745b3e, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 5
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: a506e471003b61f49a87f54dde745b3e, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 6
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: a506e471003b61f49a87f54dde745b3e, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 6
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: c47f0efb4587ad3468e5f537f298c9e8, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 5
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 4
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 4
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 4
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 4
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 5
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 6
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: b4d8565ff6f1e0d43b64a9fef092a5ce, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 3
+    gridY: 3
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: f4ea1687d9298dc42919b81b31a81024, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 3
+    gridY: 4
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: a506e471003b61f49a87f54dde745b3e, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 1
+    frontSideMaterial: {fileID: 2100000, guid: e41dc648119fe6a4195424749b824420, type: 2}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 3
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: a506e471003b61f49a87f54dde745b3e, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 3
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: c47f0efb4587ad3468e5f537f298c9e8, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 2
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 45910b256bf6dd347b0d7b4a28fe3464, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 10
+    gridY: 2
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 45910b256bf6dd347b0d7b4a28fe3464, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}
+  - gridX: 10
+    gridY: 5
+    overrideTop: 1
+    topMaterial: {fileID: 2100000, guid: 45910b256bf6dd347b0d7b4a28fe3464, type: 2}
+    fallbackTopColor: {r: 1, g: 1, b: 1, a: 1}
+    overrideFrontSide: 0
+    frontSideMaterial: {fileID: 0}
+    fallbackFrontSideColor: {r: 0.45, g: 0.35, b: 0.18, a: 1}
+    overrideLeftSide: 0
+    leftSideMaterial: {fileID: 0}
+    fallbackLeftSideColor: {r: 0.38, g: 0.3, b: 0.16, a: 1}
+    overrideRightSide: 0
+    rightSideMaterial: {fileID: 0}
+    fallbackRightSideColor: {r: 0.5, g: 0.4, b: 0.22, a: 1}

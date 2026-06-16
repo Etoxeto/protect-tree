@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 549049c9b0c64e1780ea1ea463ddac86
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - observedBoardView: {instanceID: 0}
+  - highlightRoot: {instanceID: 0}
+  - visualDefinition: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData:
+  assetBundleName:
+  assetBundleVariant:

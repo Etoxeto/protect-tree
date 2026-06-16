@@ -1,0 +1,1199 @@
+local piece_configs = require("Config.Pieces")
+local player_config = require("Match.PlayerConfig")
+local synergy_configs = require("Config.Synergies")
+local board = require("Config.Board")
+local board_queries = require("Match.BoardQueries")
+
+local M = {}
+
+local active_player_configs = {}
+local next_instance_id = 1
+local pieces_by_id = {}
+local ordered_piece_ids = {}
+local ordered_player_ids = {}
+local occupied_cells_by_player = {}
+local capacity_by_player = {}
+local active_synergies_by_player = {}
+local synergy_progresses_by_player = {}
+local pending_events = {}
+local is_battle_active = false
+
+local function require_positive_integer(value, field_name)
+    if type(value) ~= "number"
+        or value <= 0
+        or value % 1 ~= 0 then
+        error(
+            field_name
+            .. " must be a positive integer: "
+            .. tostring(value)
+        )
+    end
+end
+
+local function require_positive_number(value, field_name)
+    if type(value) ~= "number" or value <= 0 then
+        error(
+            field_name
+            .. " must be a positive number: "
+            .. tostring(value)
+        )
+    end
+end
+
+local function reset(session_options)
+    active_player_configs, ordered_player_ids =
+        player_config.get_active_player_configs(session_options)
+    next_instance_id = 1
+    pieces_by_id = {}
+    ordered_piece_ids = {}
+    occupied_cells_by_player = {}
+    capacity_by_player = {}
+    active_synergies_by_player = {}
+    synergy_progresses_by_player = {}
+    pending_events = {}
+    is_battle_active = false
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        local config = active_player_configs[player_id]
+        require_positive_integer(player_id, "player_id")
+        require_positive_integer(config.bench_capacity, "bench_capacity")
+        require_positive_integer(
+            config.starting_deployment_limit,
+            "starting_deployment_limit"
+        )
+        occupied_cells_by_player[player_id] = {}
+        active_synergies_by_player[player_id] = {}
+        synergy_progresses_by_player[player_id] = {}
+        capacity_by_player[player_id] = {
+            player_id = player_id,
+            bench_count = 0,
+            bench_capacity = config.bench_capacity,
+            temporary_bench_count = 0,
+            temporary_bench_capacity = board.temporary_reserve_capacity,
+            board_count = 0,
+            deployment_limit = config.starting_deployment_limit,
+        }
+    end
+
+end
+
+local function copy_piece(piece)
+    local config = piece_configs[piece.piece_id]
+    local copy = {
+        instance_id = piece.instance_id,
+        piece_id = piece.piece_id,
+        display_name = config.display_name or piece.piece_id,
+        portrait = config.portrait or "",
+        class_id = config.class_id or "",
+        rarity = config.rarity or 1,
+        owner_player_id = piece.owner_player_id,
+        level = piece.level,
+        location = piece.location,
+        cell_id = piece.cell_id,
+        terrain = piece.terrain,
+        facing = piece.facing,
+        health = piece.health,
+        max_health = piece.max_health,
+        status = piece.status,
+        max_block_count = piece.max_block_count,
+        blocked_enemy_instance_ids = {},
+        recovery_seconds_remaining = piece.recovery_seconds_remaining,
+        base_damage = piece.base_damage,
+        damage = piece.damage,
+        attack_interval_seconds = piece.attack_interval_seconds,
+        sell_value = piece.sell_value,
+        synergies = {},
+        deployable_terrains = {},
+    }
+
+    for _, enemy_instance_id in ipairs(piece.blocked_enemy_instance_ids) do
+        table.insert(copy.blocked_enemy_instance_ids, enemy_instance_id)
+    end
+
+    for terrain, is_deployable in pairs(piece.deployable_terrains) do
+        if is_deployable == true then
+            table.insert(copy.deployable_terrains, terrain)
+        end
+    end
+    table.sort(copy.deployable_terrains)
+
+    for _, synergy_id in ipairs(config.synergies) do
+        local definition = synergy_configs.definitions[synergy_id]
+        table.insert(copy.synergies, {
+            synergy_id = synergy_id,
+            display_name = definition.display_name or synergy_id,
+        })
+    end
+
+    return copy
+end
+
+local function require_non_negative_integer(value, field_name)
+    if type(value) ~= "number"
+        or value < 0
+        or value % 1 ~= 0 then
+        error(
+            field_name
+            .. " must be a non-negative integer: "
+            .. tostring(value)
+        )
+    end
+end
+
+local function get_level_config(config, level)
+    if type(config.levels) ~= "table" or #config.levels == 0 then
+        error("Piece must contain at least one level")
+    end
+
+    local level_config = config.levels[level]
+    if level_config == nil then
+        error("Piece level config not found: " .. tostring(level))
+    end
+
+    require_positive_integer(level_config.damage, "damage")
+    require_positive_integer(level_config.sell_value, "sell_value")
+    require_positive_integer(level_config.max_health, "max_health")
+    require_non_negative_integer(level_config.max_block_count, "max_block_count")
+    return level_config
+end
+
+local function apply_level_stats(piece, level, level_config)
+    piece.level = level
+    piece.health = level_config.max_health
+    piece.max_health = level_config.max_health
+    piece.status = "Active"
+    piece.max_block_count = level_config.max_block_count
+    piece.blocked_enemy_instance_ids = {}
+    piece.recovery_seconds_remaining = 0
+    piece.base_damage = level_config.damage
+    piece.damage = piece.base_damage
+    piece.sell_value = level_config.sell_value
+end
+
+local function piece_has_synergy(piece_id, synergy_id)
+    local config = piece_configs[piece_id]
+
+    if type(config.synergies) ~= "table" or #config.synergies == 0 then
+        error("Piece must contain at least one synergy: " .. piece_id)
+    end
+
+    for _, configured_synergy_id in ipairs(config.synergies) do
+        if synergy_configs.definitions[configured_synergy_id] == nil then
+            error("Piece synergy config not found: " .. configured_synergy_id)
+        end
+
+        if configured_synergy_id == synergy_id then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function get_active_synergy_level(synergy_id, unique_piece_count)
+    local definition = synergy_configs.definitions[synergy_id]
+    if definition == nil or type(definition.levels) ~= "table" then
+        error("Synergy config not found: " .. tostring(synergy_id))
+    end
+
+    local active_level = nil
+    for level, config in ipairs(definition.levels) do
+        require_positive_integer(
+            config.required_unique_pieces,
+            "required_unique_pieces"
+        )
+        require_non_negative_integer(config.damage_bonus, "damage_bonus")
+
+        if unique_piece_count >= config.required_unique_pieces then
+            active_level = {
+                synergy_id = synergy_id,
+                level = level,
+                unique_piece_count = unique_piece_count,
+                required_unique_pieces = config.required_unique_pieces,
+                damage_bonus = config.damage_bonus,
+            }
+        end
+    end
+
+    return active_level
+end
+
+local function active_synergies_equal(first, second)
+    if #first ~= #second then
+        return false
+    end
+
+    for index, first_synergy in ipairs(first) do
+        local second_synergy = second[index]
+        if first_synergy.synergy_id ~= second_synergy.synergy_id
+            or first_synergy.level ~= second_synergy.level
+            or first_synergy.unique_piece_count
+                ~= second_synergy.unique_piece_count then
+            return false
+        end
+    end
+
+    return true
+end
+
+local function copy_active_synergy(player_id, synergy)
+    return {
+        player_id = player_id,
+        synergy_id = synergy.synergy_id,
+        level = synergy.level,
+        unique_piece_count = synergy.unique_piece_count,
+        required_unique_pieces = synergy.required_unique_pieces,
+        damage_bonus = synergy.damage_bonus,
+    }
+end
+
+local function copy_synergy_progress(player_id, progress)
+    return {
+        player_id = player_id,
+        synergy_id = progress.synergy_id,
+        display_name = progress.display_name,
+        level = progress.level,
+        unique_piece_count = progress.unique_piece_count,
+        required_unique_pieces = progress.required_unique_pieces,
+        damage_bonus = progress.damage_bonus,
+    }
+end
+
+local function build_synergy_progress(synergy_id, unique_piece_count, active_level)
+    local definition = synergy_configs.definitions[synergy_id]
+    local required_unique_pieces = nil
+
+    if active_level ~= nil then
+        required_unique_pieces = active_level.required_unique_pieces
+    else
+        for _, level_config in ipairs(definition.levels) do
+            if unique_piece_count < level_config.required_unique_pieces then
+                required_unique_pieces = level_config.required_unique_pieces
+                break
+            end
+        end
+    end
+
+    if required_unique_pieces == nil then
+        required_unique_pieces =
+            definition.levels[#definition.levels].required_unique_pieces
+    end
+
+    return {
+        synergy_id = synergy_id,
+        display_name = definition.display_name or synergy_id,
+        level = active_level ~= nil and active_level.level or 0,
+        unique_piece_count = unique_piece_count,
+        required_unique_pieces = required_unique_pieces,
+        damage_bonus = active_level ~= nil and active_level.damage_bonus or 0,
+    }
+end
+
+local function recompute_synergies(player_id)
+    local unique_piece_ids_by_synergy = {}
+    local active_synergies = {}
+    local synergy_progresses = {}
+
+    for _, synergy_id in ipairs(synergy_configs.order) do
+        unique_piece_ids_by_synergy[synergy_id] = {}
+    end
+
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        if piece.owner_player_id == player_id and piece.location == "Board" then
+            for _, synergy_id in ipairs(piece_configs[piece.piece_id].synergies) do
+                unique_piece_ids_by_synergy[synergy_id][piece.piece_id] = true
+            end
+        end
+    end
+
+    for _, synergy_id in ipairs(synergy_configs.order) do
+        local unique_piece_count = 0
+        for _ in pairs(unique_piece_ids_by_synergy[synergy_id]) do
+            unique_piece_count = unique_piece_count + 1
+        end
+
+        local active_level =
+            get_active_synergy_level(synergy_id, unique_piece_count)
+        if active_level ~= nil then
+            table.insert(active_synergies, active_level)
+        end
+
+        -- UI 需要知道“已有角色但尚未激活”的进度，不能只暴露已激活羁绊。
+        table.insert(
+            synergy_progresses,
+            build_synergy_progress(synergy_id, unique_piece_count, active_level)
+        )
+    end
+
+    -- 羁绊只由战场阵容决定，也只强化战场上的对应羁绊棋子。
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        if piece.owner_player_id == player_id then
+            piece.damage = piece.base_damage
+
+            if piece.location == "Board" then
+                for _, synergy in ipairs(active_synergies) do
+                    if piece_has_synergy(piece.piece_id, synergy.synergy_id) then
+                        piece.damage = piece.damage + synergy.damage_bonus
+                    end
+                end
+            end
+        end
+    end
+
+    local previous_synergies = active_synergies_by_player[player_id]
+    active_synergies_by_player[player_id] = active_synergies
+    synergy_progresses_by_player[player_id] = synergy_progresses
+
+    if not active_synergies_equal(previous_synergies, active_synergies) then
+        local copied_synergies = {}
+        for _, synergy in ipairs(active_synergies) do
+            table.insert(copied_synergies, copy_active_synergy(player_id, synergy))
+        end
+
+        table.insert(pending_events, {
+            type = "SynergiesChanged",
+            player_id = player_id,
+            active_synergies = copied_synergies,
+        })
+    end
+end
+
+local function validate_synergy_configs()
+    if type(synergy_configs.order) ~= "table"
+        or type(synergy_configs.definitions) ~= "table" then
+        error("Synergy config must contain order and definitions")
+    end
+
+    local ordered_synergy_ids = {}
+    for _, synergy_id in ipairs(synergy_configs.order) do
+        if type(synergy_id) ~= "string" or synergy_id == "" then
+            error("Synergy ID must be a non-empty string")
+        end
+
+        if ordered_synergy_ids[synergy_id] then
+            error("Duplicate ordered synergy ID: " .. synergy_id)
+        end
+        ordered_synergy_ids[synergy_id] = true
+
+        local definition = synergy_configs.definitions[synergy_id]
+        if definition == nil
+            or type(definition.levels) ~= "table"
+            or #definition.levels == 0 then
+            error("Synergy must contain at least one level: " .. synergy_id)
+        end
+
+        local previous_requirement = 0
+        for _, level_config in ipairs(definition.levels) do
+            require_positive_integer(
+                level_config.required_unique_pieces,
+                "required_unique_pieces"
+            )
+            require_non_negative_integer(level_config.damage_bonus, "damage_bonus")
+
+            if level_config.required_unique_pieces <= previous_requirement then
+                error("Synergy level requirements must strictly increase: " .. synergy_id)
+            end
+            previous_requirement = level_config.required_unique_pieces
+        end
+    end
+
+    for piece_id, config in pairs(piece_configs) do
+        if type(config.synergies) ~= "table" or #config.synergies == 0 then
+            error("Piece must contain at least one synergy: " .. piece_id)
+        end
+
+        for _, synergy_id in ipairs(config.synergies) do
+            if not ordered_synergy_ids[synergy_id] then
+                error("Piece synergy is not in configured order: " .. synergy_id)
+            end
+        end
+    end
+end
+
+local function remove_ordered_piece_id(piece_instance_id)
+    for index, ordered_instance_id in ipairs(ordered_piece_ids) do
+        if ordered_instance_id == piece_instance_id then
+            table.remove(ordered_piece_ids, index)
+            return
+        end
+    end
+end
+
+local function remove_piece(piece)
+    local capacity = capacity_by_player[piece.owner_player_id]
+
+    if piece.cell_id ~= nil then
+        occupied_cells_by_player[piece.owner_player_id][piece.cell_id] = nil
+    end
+
+    if piece.location == "Board" then
+        capacity.board_count = capacity.board_count - 1
+    elseif piece.location == "TemporaryReserve" then
+        capacity.temporary_bench_count = capacity.temporary_bench_count - 1
+    else
+        capacity.bench_count = capacity.bench_count - 1
+    end
+
+    pieces_by_id[piece.instance_id] = nil
+    remove_ordered_piece_id(piece.instance_id)
+end
+
+local function find_free_cell_id(player_id, ordered_cell_ids)
+    local occupied_cells = occupied_cells_by_player[player_id]
+
+    for _, cell_id in ipairs(ordered_cell_ids) do
+        if occupied_cells[cell_id] == nil then
+            return cell_id
+        end
+    end
+
+    return nil
+end
+
+local function find_merge_piece_ids(player_id, piece_id, level)
+    local piece_instance_ids = {}
+
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        if piece.owner_player_id == player_id
+            and piece.piece_id == piece_id
+            and piece.level == level then
+            table.insert(piece_instance_ids, instance_id)
+
+            if #piece_instance_ids == 3 then
+                break
+            end
+        end
+    end
+
+    return piece_instance_ids
+end
+
+local function try_merge(player_id, piece_id, starting_level)
+    local config = piece_configs[piece_id]
+    local level = starting_level
+    local survivor_instance_id = nil
+
+    while level < #config.levels do
+        local merge_ids = find_merge_piece_ids(player_id, piece_id, level)
+        if #merge_ids < 3 then
+            break
+        end
+
+        local survivor = pieces_by_id[merge_ids[1]]
+        local consumed_ids = { merge_ids[2], merge_ids[3] }
+        remove_piece(pieces_by_id[consumed_ids[1]])
+        remove_piece(pieces_by_id[consumed_ids[2]])
+
+        local previous_level = survivor.level
+        level = previous_level + 1
+        apply_level_stats(survivor, level, get_level_config(config, level))
+        survivor_instance_id = survivor.instance_id
+
+        -- 保留最早实例使部署位置和网络引用稳定；另外两个实例永久移除且 ID 不复用。
+        table.insert(pending_events, {
+            type = "PiecesMerged",
+            player_id = player_id,
+            piece_id = piece_id,
+            survivor_piece_instance_id = survivor.instance_id,
+            consumed_piece_instance_ids = consumed_ids,
+            previous_level = previous_level,
+            level = level,
+        })
+    end
+
+    return survivor_instance_id
+end
+
+function M.start(session_options)
+    reset(session_options)
+    validate_synergy_configs()
+end
+
+function M.can_grant_piece(player_id, allow_overflow)
+    require_positive_integer(player_id, "player_id")
+    local capacity = capacity_by_player[player_id]
+
+    if capacity == nil then
+        error("Player not found: " .. tostring(player_id))
+    end
+
+    local has_reserve_space =
+        capacity.bench_count < capacity.bench_capacity
+        and find_free_cell_id(player_id, board.reserve_cell_ids) ~= nil
+    if has_reserve_space then
+        return true
+    end
+
+    return allow_overflow == true
+        and capacity.temporary_bench_count < capacity.temporary_bench_capacity
+        and find_free_cell_id(player_id, board.temporary_reserve_cell_ids) ~= nil
+end
+
+function M.set_deployment_limit(player_id, deployment_limit)
+    require_positive_integer(player_id, "player_id")
+    require_positive_integer(deployment_limit, "deployment_limit")
+    local capacity = capacity_by_player[player_id]
+
+    if capacity == nil then
+        error("Player not found: " .. tostring(player_id))
+    end
+
+    if deployment_limit < capacity.board_count then
+        error("Deployment limit cannot be lower than current board count")
+    end
+
+    if deployment_limit == capacity.deployment_limit then
+        return
+    end
+
+    local previous_limit = capacity.deployment_limit
+    capacity.deployment_limit = deployment_limit
+
+    table.insert(pending_events, {
+        type = "DeploymentLimitChanged",
+        player_id = player_id,
+        previous_deployment_limit = previous_limit,
+        deployment_limit = deployment_limit,
+    })
+end
+
+function M.grant_piece(player_id, piece_id, allow_overflow)
+    require_positive_integer(player_id, "player_id")
+
+    if active_player_configs[player_id] == nil then
+        error("Player not found: " .. tostring(player_id))
+    end
+
+    if not M.can_grant_piece(player_id, allow_overflow) then
+        error("Reserve capacity reached for player: " .. player_id)
+    end
+
+    local config = piece_configs[piece_id]
+
+    if config == nil then
+        error("Piece config not found: " .. tostring(piece_id))
+    end
+
+    local level_config = get_level_config(config, 1)
+    require_positive_number(
+        config.attack_interval_seconds,
+        "attack_interval_seconds"
+    )
+    require_positive_number(config.recovery_seconds, "recovery_seconds")
+
+    if type(config.deployable_terrains) ~= "table" then
+        error("deployable_terrains must be a table: " .. tostring(piece_id))
+    end
+
+    if type(config.synergies) ~= "table" or #config.synergies == 0 then
+        error("Piece must contain at least one synergy: " .. tostring(piece_id))
+    end
+    for _, synergy_id in ipairs(config.synergies) do
+        if synergy_configs.definitions[synergy_id] == nil then
+            error("Piece synergy config not found: " .. tostring(synergy_id))
+        end
+    end
+
+    board_queries.require_facing(config.default_facing)
+
+    if type(config.attack_range) ~= "table" or #config.attack_range == 0 then
+        error("attack_range must contain at least one cell: " .. tostring(piece_id))
+    end
+
+    local instance_id = next_instance_id
+    local reserve_cell_id = find_free_cell_id(player_id, board.reserve_cell_ids)
+    local location = "Bench"
+
+    if reserve_cell_id == nil and allow_overflow == true then
+        reserve_cell_id =
+            find_free_cell_id(player_id, board.temporary_reserve_cell_ids)
+        location = "TemporaryReserve"
+    end
+
+    if reserve_cell_id == nil then
+        error("Reserve capacity reached for player: " .. player_id)
+    end
+
+    local reserve_cell = board.cells[reserve_cell_id]
+
+    local piece = {
+        instance_id = instance_id,
+        piece_id = piece_id,
+        owner_player_id = player_id,
+        level = 1,
+        location = location,
+        cell_id = reserve_cell_id,
+        terrain = reserve_cell.terrain,
+        facing = config.default_facing,
+        health = level_config.max_health,
+        max_health = level_config.max_health,
+        status = "Active",
+        max_block_count = level_config.max_block_count,
+        blocked_enemy_instance_ids = {},
+        recovery_seconds = config.recovery_seconds,
+        recovery_seconds_remaining = 0,
+        base_damage = level_config.damage,
+        damage = level_config.damage,
+        attack_interval_seconds = config.attack_interval_seconds,
+        sell_value = level_config.sell_value,
+        deployable_terrains = config.deployable_terrains,
+    }
+
+    pieces_by_id[instance_id] = piece
+    table.insert(ordered_piece_ids, instance_id)
+    occupied_cells_by_player[player_id][reserve_cell_id] = instance_id
+    next_instance_id = next_instance_id + 1
+    if location == "TemporaryReserve" then
+        capacity_by_player[player_id].temporary_bench_count =
+            capacity_by_player[player_id].temporary_bench_count + 1
+    else
+        capacity_by_player[player_id].bench_count =
+            capacity_by_player[player_id].bench_count + 1
+    end
+
+    table.insert(pending_events, {
+        type = "PieceGranted",
+        player_id = piece.owner_player_id,
+        piece_id = piece.piece_id,
+        piece_instance_id = piece.instance_id,
+        cell_id = piece.cell_id,
+        location = piece.location,
+    })
+
+    local surviving_instance_id =
+        try_merge(player_id, piece_id, 1) or piece.instance_id
+    recompute_synergies(player_id)
+    return surviving_instance_id
+end
+
+function M.sell_piece(player_id, piece_instance_id)
+    require_positive_integer(player_id, "player_id")
+    require_positive_integer(piece_instance_id, "piece_instance_id")
+    local piece = pieces_by_id[piece_instance_id]
+
+    if piece == nil then
+        error("Piece not found: " .. tostring(piece_instance_id))
+    end
+
+    if piece.owner_player_id ~= player_id then
+        error("Cannot sell a piece owned by another player")
+    end
+
+    -- 实例 ID 永不复用；从稳定顺序表移除后，所有后续快照与战斗规划器都不再看到该棋子。
+    remove_piece(piece)
+
+    table.insert(pending_events, {
+        type = "PieceSold",
+        player_id = player_id,
+        piece_id = piece.piece_id,
+        piece_instance_id = piece.instance_id,
+        level = piece.level,
+        sell_value = piece.sell_value,
+    })
+
+    recompute_synergies(player_id)
+    return piece.sell_value
+end
+
+local function handle_deploy_requested(event)
+    local player_id = event.player_id
+    local piece_instance_id = event.piece_instance_id
+    local cell_id = event.cell_id
+
+    require_positive_integer(player_id, "player_id")
+    require_positive_integer(piece_instance_id, "piece_instance_id")
+    require_positive_integer(cell_id, "cell_id")
+
+    if active_player_configs[player_id] == nil then
+        error("Player not found: " .. tostring(player_id))
+    end
+
+    local piece = pieces_by_id[piece_instance_id]
+
+    if piece == nil then
+        error("Piece not found: " .. tostring(piece_instance_id))
+    end
+
+    if piece.owner_player_id ~= player_id then
+        error(
+            "Piece "
+            .. piece_instance_id
+            .. " is not owned by player "
+            .. player_id
+        )
+    end
+
+    if piece.cell_id == cell_id then
+        return
+    end
+
+    local cell = board.cells[cell_id]
+
+    if cell == nil then
+        error("Board cell not found: " .. tostring(cell_id))
+    end
+
+    if cell.terrain == "Obstacle" then
+        error("Cannot deploy a piece on obstacle cell: " .. cell_id)
+    end
+
+    if not board_queries.is_cell_battle_deployable(cell) then
+        error(
+            "Cannot deploy a piece in board zone "
+            .. tostring(cell.zone)
+            .. ": "
+            .. cell_id
+        )
+    end
+
+    if piece.deployable_terrains[cell.terrain] ~= true then
+        error(
+            "Piece "
+            .. piece.piece_id
+            .. " cannot deploy on terrain "
+            .. tostring(cell.terrain)
+        )
+    end
+
+    local occupied_cells = occupied_cells_by_player[player_id]
+    local occupying_piece_id = occupied_cells[cell_id]
+
+    if occupying_piece_id ~= nil then
+        error(
+            "Cell "
+            .. cell_id
+            .. " is already occupied for player "
+            .. player_id
+        )
+    end
+
+    local previous_cell_id = piece.cell_id
+    local previous_location = piece.location
+    local capacity = capacity_by_player[player_id]
+
+    if previous_location ~= "Board" then
+        if capacity.board_count >= capacity.deployment_limit then
+            error("Deployment limit reached for player: " .. player_id)
+        end
+
+        -- 只有从备战区首次进入战场时才改变容量计数；战场格之间移动不改变人口。
+        if previous_location == "TemporaryReserve" then
+            capacity.temporary_bench_count =
+                capacity.temporary_bench_count - 1
+        else
+            capacity.bench_count = capacity.bench_count - 1
+        end
+        capacity.board_count = capacity.board_count + 1
+    end
+
+    if previous_cell_id ~= nil then
+        occupied_cells[previous_cell_id] = nil
+    end
+
+    occupied_cells[cell_id] = piece.instance_id
+    piece.location = "Board"
+    piece.cell_id = cell_id
+    piece.terrain = cell.terrain
+
+    local deployed_event = {
+        type = "PieceDeployed",
+        player_id = piece.owner_player_id,
+        piece_id = piece.piece_id,
+        piece_instance_id = piece.instance_id,
+        cell_id = piece.cell_id,
+    }
+
+    deployed_event.previous_cell_id = previous_cell_id
+
+    table.insert(pending_events, deployed_event)
+    recompute_synergies(player_id)
+end
+
+local function handle_bench_requested(event)
+    require_positive_integer(event.player_id, "player_id")
+    require_positive_integer(event.piece_instance_id, "piece_instance_id")
+
+    local piece = pieces_by_id[event.piece_instance_id]
+
+    if piece == nil then
+        error("Piece not found: " .. tostring(event.piece_instance_id))
+    end
+
+    if piece.owner_player_id ~= event.player_id then
+        error("Cannot bench a piece owned by another player")
+    end
+
+    if piece.location == "Bench" and event.cell_id == nil then
+        return
+    end
+
+    local capacity = capacity_by_player[event.player_id]
+    if piece.location ~= "Bench"
+        and capacity.bench_count >= capacity.bench_capacity then
+        error("Bench capacity reached for player: " .. event.player_id)
+    end
+
+    local reserve_cell_id = event.cell_id
+        or find_free_cell_id(event.player_id, board.reserve_cell_ids)
+    if reserve_cell_id == nil then
+        error("Reserve cell not found for player: " .. event.player_id)
+    end
+
+    require_positive_integer(reserve_cell_id, "cell_id")
+    local reserve_cell = board.cells[reserve_cell_id]
+    if reserve_cell == nil
+        or board.zone_definitions[reserve_cell.zone].accepts_reserve_piece
+            ~= true then
+        error("Cell does not accept reserve pieces: " .. reserve_cell_id)
+    end
+
+    local previous_cell_id = piece.cell_id
+    if previous_cell_id == reserve_cell_id then
+        return
+    end
+
+    local occupied_cells = occupied_cells_by_player[event.player_id]
+    if occupied_cells[reserve_cell_id] ~= nil then
+        error("Reserve cell is already occupied: " .. reserve_cell_id)
+    end
+
+    occupied_cells[previous_cell_id] = nil
+    occupied_cells[reserve_cell_id] = piece.instance_id
+    if piece.location == "Board" then
+        capacity.board_count = capacity.board_count - 1
+        capacity.bench_count = capacity.bench_count + 1
+    elseif piece.location == "TemporaryReserve" then
+        capacity.temporary_bench_count = capacity.temporary_bench_count - 1
+        capacity.bench_count = capacity.bench_count + 1
+    end
+    piece.location = "Bench"
+    piece.cell_id = reserve_cell_id
+    piece.terrain = reserve_cell.terrain
+    piece.blocked_enemy_instance_ids = {}
+
+    table.insert(pending_events, {
+        type = "PieceBenched",
+        player_id = piece.owner_player_id,
+        piece_id = piece.piece_id,
+        piece_instance_id = piece.instance_id,
+        cell_id = reserve_cell_id,
+        previous_cell_id = previous_cell_id,
+    })
+    recompute_synergies(event.player_id)
+end
+
+function M.auto_sell_temporary_pieces()
+    local temporary_piece_ids = {}
+    local sales = {}
+
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        if piece.location == "TemporaryReserve" then
+            table.insert(temporary_piece_ids, instance_id)
+        end
+    end
+
+    for _, instance_id in ipairs(temporary_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        local sale = {
+            player_id = piece.owner_player_id,
+            piece_id = piece.piece_id,
+            piece_instance_id = piece.instance_id,
+            level = piece.level,
+            sell_value = piece.sell_value,
+        }
+
+        remove_piece(piece)
+        table.insert(sales, sale)
+        table.insert(pending_events, {
+            type = "PieceSold",
+            player_id = sale.player_id,
+            piece_id = sale.piece_id,
+            piece_instance_id = sale.piece_instance_id,
+            level = sale.level,
+            sell_value = sale.sell_value,
+            reason = "TemporaryReserveAutoSell",
+        })
+        recompute_synergies(sale.player_id)
+    end
+
+    return sales
+end
+
+local function handle_facing_requested(event)
+    require_positive_integer(event.player_id, "player_id")
+    require_positive_integer(event.piece_instance_id, "piece_instance_id")
+    board_queries.require_facing(event.facing)
+
+    local piece = pieces_by_id[event.piece_instance_id]
+
+    if piece == nil then
+        error("Piece not found: " .. tostring(event.piece_instance_id))
+    end
+
+    if piece.owner_player_id ~= event.player_id then
+        error("Cannot rotate a piece owned by another player")
+    end
+
+    if piece.facing == event.facing then
+        return
+    end
+
+    local previous_facing = piece.facing
+    piece.facing = event.facing
+
+    table.insert(pending_events, {
+        type = "PieceFacingChanged",
+        player_id = piece.owner_player_id,
+        piece_instance_id = piece.instance_id,
+        facing = piece.facing,
+        previous_facing = previous_facing,
+    })
+end
+
+local function handle_place_requested(event)
+    require_positive_integer(event.cell_id, "cell_id")
+    local cell = board.cells[event.cell_id]
+
+    if cell == nil then
+        error("Board cell not found: " .. tostring(event.cell_id))
+    end
+
+    if board.zone_definitions[cell.zone].accepts_reserve_piece == true then
+        handle_bench_requested(event)
+        return
+    end
+
+    -- 战场位置与朝向属于一次玩家确认，先验证朝向再改变任何权威状态。
+    board_queries.require_facing(event.facing)
+    handle_deploy_requested(event)
+    handle_facing_requested(event)
+end
+
+local function remove_blocked_enemy(piece, enemy_instance_id)
+    for index, blocked_enemy_instance_id in ipairs(piece.blocked_enemy_instance_ids) do
+        if blocked_enemy_instance_id == enemy_instance_id then
+            table.remove(piece.blocked_enemy_instance_ids, index)
+            return
+        end
+    end
+end
+
+local function handle_block_requested(event)
+    local piece = pieces_by_id[event.piece_instance_id]
+
+    if piece == nil or piece.status ~= "Active" then
+        return
+    end
+
+    if piece.terrain ~= "Ground" then
+        error("Only a ground piece can block enemies: " .. piece.instance_id)
+    end
+
+    for _, enemy_instance_id in ipairs(piece.blocked_enemy_instance_ids) do
+        if enemy_instance_id == event.enemy_instance_id then
+            return
+        end
+    end
+
+    if #piece.blocked_enemy_instance_ids >= piece.max_block_count then
+        error("Piece block capacity exceeded: " .. piece.instance_id)
+    end
+
+    table.insert(piece.blocked_enemy_instance_ids, event.enemy_instance_id)
+end
+
+local function handle_unblock_requested(event)
+    local piece = pieces_by_id[event.piece_instance_id]
+
+    if piece ~= nil then
+        remove_blocked_enemy(piece, event.enemy_instance_id)
+    end
+end
+
+local function handle_damage_requested(event)
+    require_positive_integer(event.piece_instance_id, "piece_instance_id")
+    require_positive_integer(event.source_enemy_instance_id, "source_enemy_instance_id")
+    require_positive_integer(event.damage, "damage")
+
+    local piece = pieces_by_id[event.piece_instance_id]
+
+    if piece == nil then
+        error("Piece not found: " .. tostring(event.piece_instance_id))
+    end
+
+    if piece.status ~= "Active" then
+        return
+    end
+
+    local actual_damage = math.min(event.damage, piece.health)
+    piece.health = piece.health - actual_damage
+
+    table.insert(pending_events, {
+        type = "PieceDamaged",
+        piece_instance_id = piece.instance_id,
+        source_enemy_instance_id = event.source_enemy_instance_id,
+        damage = actual_damage,
+        health = piece.health,
+    })
+
+    if piece.health == 0 then
+        piece.status = "Downed"
+        piece.recovery_seconds_remaining = piece.recovery_seconds
+
+        -- 倒地棋子仍占据部署格，但立即失去攻击和阻挡能力。
+        table.insert(pending_events, {
+            type = "PieceDowned",
+            piece_instance_id = piece.instance_id,
+            source_enemy_instance_id = event.source_enemy_instance_id,
+            recovery_seconds = piece.recovery_seconds,
+        })
+    end
+end
+
+function M.handle_event(event)
+    if event.type == "PiecePlaceRequested" then
+        handle_place_requested(event)
+        return
+    end
+
+    if event.type == "PieceDeployRequested" then
+        handle_deploy_requested(event)
+        return
+    end
+
+    if event.type == "PieceFacingRequested" then
+        handle_facing_requested(event)
+        return
+    end
+
+    if event.type == "PieceBenchRequested" then
+        handle_bench_requested(event)
+        return
+    end
+
+    if event.type == "EnemyBlockRequested" then
+        handle_block_requested(event)
+        return
+    end
+
+    if event.type == "EnemyUnblockRequested" then
+        handle_unblock_requested(event)
+        return
+    end
+
+    if event.type == "PieceDamageRequested" then
+        handle_damage_requested(event)
+    end
+end
+
+local function recover_piece(piece, reason)
+    piece.health = piece.max_health
+    piece.status = "Active"
+    piece.recovery_seconds_remaining = 0
+
+    table.insert(pending_events, {
+        type = "PieceRecovered",
+        piece_instance_id = piece.instance_id,
+        reason = reason,
+        health = piece.health,
+    })
+end
+
+function M.begin_battle()
+    is_battle_active = true
+end
+
+function M.end_battle()
+    is_battle_active = false
+
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        piece.blocked_enemy_instance_ids = {}
+
+        if piece.status == "Downed" then
+            -- 个人防守与未来联防属于同一战斗阶段；只有整个战斗阶段结束才强制起身。
+            recover_piece(piece, "BattleEnded")
+        end
+    end
+end
+
+function M.update(delta_time)
+    if not is_battle_active then
+        return
+    end
+
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+
+        if piece.status == "Downed" then
+            piece.recovery_seconds_remaining =
+                math.max(0, piece.recovery_seconds_remaining - delta_time)
+
+            if piece.recovery_seconds_remaining <= 0.000001 then
+                recover_piece(piece, "RecoveryTimer")
+            end
+        end
+    end
+end
+
+function M.get_snapshot()
+    local pieces = {}
+    local players = {}
+    local active_synergies = {}
+    local synergy_progresses = {}
+
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        table.insert(pieces, copy_piece(piece))
+    end
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        local capacity = capacity_by_player[player_id]
+        table.insert(players, {
+            player_id = capacity.player_id,
+            bench_count = capacity.bench_count,
+            bench_capacity = capacity.bench_capacity,
+            temporary_bench_count = capacity.temporary_bench_count,
+            temporary_bench_capacity = capacity.temporary_bench_capacity,
+            board_count = capacity.board_count,
+            deployment_limit = capacity.deployment_limit,
+        })
+
+        for _, synergy in ipairs(active_synergies_by_player[player_id]) do
+            table.insert(
+                active_synergies,
+                copy_active_synergy(player_id, synergy)
+            )
+        end
+
+        for _, progress in ipairs(synergy_progresses_by_player[player_id]) do
+            table.insert(
+                synergy_progresses,
+                copy_synergy_progress(player_id, progress)
+            )
+        end
+    end
+
+    return {
+        pieces = pieces,
+        players = players,
+        active_synergies = active_synergies,
+        synergy_progresses = synergy_progresses,
+    }
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.shutdown()
+    reset()
+end
+
+return M

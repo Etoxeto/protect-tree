@@ -1,0 +1,83 @@
+local board = require("Config.Board")
+
+local M = {}
+
+local facing_vectors = {
+    Up = { x = 0, y = 1 },
+    Right = { x = 1, y = 0 },
+    Down = { x = 0, y = -1 },
+    Left = { x = -1, y = 0 },
+}
+
+function M.require_facing(facing)
+    if facing_vectors[facing] == nil then
+        error("Invalid facing: " .. tostring(facing))
+    end
+end
+
+function M.get_route_progress(cell, route_id)
+    if cell == nil or type(cell.route_positions) ~= "table" then
+        return nil
+    end
+
+    return cell.route_positions[route_id]
+end
+
+function M.is_cell_battle_deployable(cell)
+    if cell == nil then
+        return false
+    end
+
+    local terrain = board.terrain_definitions[cell.terrain]
+    local zone = board.zone_definitions[cell.zone]
+
+    return terrain ~= nil
+        and terrain.allows_piece_deployment == true
+        and zone ~= nil
+        and zone.allows_battle_deployment == true
+end
+
+function M.is_enemy_in_attack_range(piece, enemy, attack_range)
+    local cell = board.cells[piece.cell_id]
+    local route = board.routes[enemy.route_id]
+
+    if cell == nil or route == nil then
+        return false
+    end
+
+    local nearest_sample = nil
+    local nearest_distance = nil
+
+    for _, sample in ipairs(route.samples) do
+        local distance = math.abs(sample.path_progress - enemy.path_progress)
+
+        if nearest_sample == nil or distance < nearest_distance then
+            nearest_sample = sample
+            nearest_distance = distance
+        end
+    end
+
+    local forward = facing_vectors[piece.facing]
+    local right = { x = forward.y, y = -forward.x }
+
+    for _, offset in ipairs(attack_range) do
+        -- 攻击模板使用“前方/右方”的相对格坐标，旋转朝向不会修改配置本身。
+        local target_x =
+            cell.grid_x
+            + forward.x * offset.forward
+            + right.x * offset.right
+        local target_y =
+            cell.grid_y
+            + forward.y * offset.forward
+            + right.y * offset.right
+
+        if nearest_sample.grid_x == target_x
+            and nearest_sample.grid_y == target_y then
+            return true
+        end
+    end
+
+    return false
+end
+
+return M

@@ -1,0 +1,10 @@
+﻿
+
+<linker>
+
+	<assembly fullname="ProtectTree.LuaContracts">
+	    <type fullname="ProtectTree.LuaContracts.LuaLearningApi" preserve="all"/>
+		
+	</assembly>
+
+</linker>

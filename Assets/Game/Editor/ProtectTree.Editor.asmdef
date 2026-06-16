@@ -1,0 +1,18 @@
+{
+    "name": "ProtectTree.Editor",
+    "rootNamespace": "ProtectTree.Editor",
+    "references": [
+        "ProtectTree.Runtime"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,110 @@
+local M = {}
+
+local board = require("Config.Board")
+
+local function sorted_numeric_keys(source)
+    local keys = {}
+
+    for key, _ in pairs(source) do
+        table.insert(keys, key)
+    end
+
+    table.sort(keys)
+    return keys
+end
+
+local function copy_route_sample(sample)
+    return {
+        cell_id = sample.cell_id,
+        grid_x = sample.grid_x,
+        grid_y = sample.grid_y,
+        path_progress = sample.path_progress,
+    }
+end
+
+local function copy_route(route_id, route)
+    local samples = {}
+
+    for _, sample in ipairs(route.samples) do
+        table.insert(samples, copy_route_sample(sample))
+    end
+
+    return {
+        route_id = route_id,
+        start_progress = route.start_progress,
+        endpoint_progress = route.endpoint_progress,
+        samples = samples,
+    }
+end
+
+local function copy_cell(cell_id, cell)
+    local terrain_definition = board.terrain_definitions[cell.terrain]
+    local zone_definition = board.zone_definitions[cell.zone]
+    local route_positions = {}
+
+    for _, route_id in ipairs(sorted_numeric_keys(cell.route_positions)) do
+        table.insert(route_positions, {
+            route_id = route_id,
+            path_progress = cell.route_positions[route_id],
+        })
+    end
+
+    local snapshot = {
+        cell_id = cell_id,
+        terrain = cell.terrain,
+        zone = cell.zone,
+        grid_x = cell.grid_x,
+        grid_y = cell.grid_y,
+        visual_x = cell.grid_x - board.origin_grid_x,
+        visual_y = cell.grid_y - board.origin_grid_y,
+        visual_height = cell.visual_height or 0,
+        visual_key = cell.visual_key or "",
+        allows_battle_deployment =
+            terrain_definition.allows_piece_deployment == true
+            and zone_definition.allows_battle_deployment == true,
+        accepts_reserve_piece = zone_definition.accepts_reserve_piece == true,
+        accepts_overflow_piece = zone_definition.accepts_overflow_piece == true,
+        auto_sell_on_battle_start =
+            zone_definition.auto_sell_on_battle_start == true,
+        allows_enemy_route =
+            terrain_definition.allows_enemy_route == true
+            and zone_definition.allows_enemy_route == true,
+        route_positions = route_positions,
+    }
+
+    -- 旧字段暂时保留为第一条路线的位置，供尚未迁移的诊断代码读取。
+    if #route_positions > 0 then
+        snapshot.route_id = route_positions[1].route_id
+        snapshot.path_progress = route_positions[1].path_progress
+    end
+
+    return snapshot
+end
+
+function M.get_snapshot()
+    local cells = {}
+    for _, cell_id in ipairs(sorted_numeric_keys(board.cells)) do
+        table.insert(cells, copy_cell(cell_id, board.cells[cell_id]))
+    end
+
+    local routes = {}
+    for _, route_id in ipairs(sorted_numeric_keys(board.routes)) do
+        table.insert(routes, copy_route(route_id, board.routes[route_id]))
+    end
+
+    -- 棋盘配置属于 Lua 权威数据；每次返回副本，防止表现层意外修改配置表。
+    return {
+        board_id = board.board_id,
+        board_kind = board.board_kind,
+        width = board.width,
+        height = board.height,
+        origin_grid_x = board.origin_grid_x,
+        origin_grid_y = board.origin_grid_y,
+        reserve_capacity = board.reserve_capacity,
+        temporary_reserve_capacity = board.temporary_reserve_capacity,
+        cells = cells,
+        routes = routes,
+    }
+end
+
+return M

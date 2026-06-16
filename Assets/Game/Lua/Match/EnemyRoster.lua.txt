@@ -1,0 +1,335 @@
+local enemy_configs = require("Config.Enemies")
+local board = require("Config.Board")
+
+local M = {}
+
+local next_instance_id = 1  -- 下一个敌人的唯一编号
+local enemies_by_id = {}   -- 通过实例id快速找到敌人
+local ordered_enemy_ids = {}    -- 保存稳定的敌人创建顺序
+local pending_events = {}    -- 保存尚未被消费的事件
+local alive_count = 0 -- 在途敌人数量，新建时加1，进入终点/死亡时减1
+
+
+local function require_positive_integer(value, field_name)
+    if type(value) ~= "number"
+        or value <= 0
+        or value % 1 ~= 0 then
+        error(
+            field_name
+            .. " must be a positive integer: "
+            .. tostring(value)
+        )
+    end
+end
+
+local function require_positive_number(value, field_name)
+    if type(value) ~= "number" or value <= 0 then
+        error(field_name .. " must be a positive number: " .. tostring(value))
+    end
+end
+
+local function require_non_negative_number(value, field_name)
+    if type(value) ~= "number" or value < 0 then
+        error(field_name .. " must be a non-negative number: " .. tostring(value))
+    end
+end
+
+local function reset()
+    next_instance_id = 1
+    alive_count = 0
+    enemies_by_id = {}
+    ordered_enemy_ids = {}
+    pending_events = {}
+end
+
+function M.start()
+    reset()
+end
+
+function M.shutdown()
+    reset()
+end
+
+local function handle_spawn_requested(event)
+    local config = enemy_configs[event.enemy_id]
+
+    if config == nil then
+        error("Enemy config not found: " .. event.enemy_id)
+    end
+
+    require_positive_integer(event.target_player_id, "target_player_id")
+    require_positive_integer(config.max_health, "max_health")
+    require_positive_integer(config.attack_damage, "attack_damage")
+    local route_id = event.route_id or config.route_id
+    require_positive_integer(route_id, "route_id")
+    if board.routes[route_id] == nil then
+        error("Enemy route config not found: " .. route_id)
+    end
+    require_positive_number(config.path_speed, "path_speed")
+    require_positive_number(
+        config.attack_interval_seconds,
+        "attack_interval_seconds"
+    )
+
+    if config.attack_type ~= "Melee" and config.attack_type ~= "Ranged" then
+        error("Invalid attack_type: " .. tostring(config.attack_type))
+    end
+
+    local instance_id = next_instance_id
+
+    local enemy = {
+        target_player_id = event.target_player_id,
+        instance_id = instance_id,
+        enemy_id = event.enemy_id,
+        wave = event.wave,
+        spawn_index = event.spawn_index,
+        health = config.max_health,
+        max_health = config.max_health,
+        status = "Alive",
+        attack_damage = config.attack_damage,
+        attack_interval_seconds = config.attack_interval_seconds,
+        attack_type = config.attack_type,
+        is_boss = config.is_boss == true,
+        route_id = route_id,
+        path_speed = config.path_speed,
+        path_progress = 0,
+        blocked_by_piece_instance_id = nil,
+    }
+    enemies_by_id[instance_id] = enemy
+    table.insert(ordered_enemy_ids, instance_id)
+
+    table.insert(pending_events, {
+        type = "EnemyCreated",
+        wave = event.wave,
+        enemy_id = event.enemy_id,
+        spawn_index = event.spawn_index,
+        enemy_instance_id = instance_id,
+        target_player_id = enemy.target_player_id,
+        is_boss = enemy.is_boss,
+    })
+
+    alive_count = alive_count + 1
+    next_instance_id = next_instance_id + 1
+end
+
+local function handle_damage_requested(event)
+    require_positive_integer(event.enemy_instance_id, "enemy_instance_id")
+    require_positive_integer(
+        event.source_piece_instance_id,
+        "source_piece_instance_id"
+    )
+    require_positive_integer(event.damage, "damage")
+
+    local enemy = enemies_by_id[event.enemy_instance_id]
+
+    if enemy == nil then
+        error("Enemy not found: " .. tostring(event.enemy_instance_id))
+    end
+
+    if event.wave ~= enemy.wave then
+        error(
+            "Event wave does not match enemy wave: "
+            .. tostring(event.wave)
+        )
+    end
+
+    if enemy.status ~= "Alive" then
+        return
+    end
+
+    local actual_damage = math.min(event.damage, enemy.health)
+    enemy.health = enemy.health - actual_damage
+
+    table.insert(pending_events, {
+        type = "EnemyDamaged",
+        wave = enemy.wave,
+        enemy_id = enemy.enemy_id,
+        enemy_instance_id = enemy.instance_id,
+        target_player_id = enemy.target_player_id,
+        source_piece_instance_id = event.source_piece_instance_id,
+        damage = actual_damage,
+        health = enemy.health,
+        is_boss = enemy.is_boss,
+    })
+
+    if enemy.health == 0 then
+        enemy.status = "Defeated"
+        enemy.blocked_by_piece_instance_id = nil
+        alive_count = alive_count - 1
+
+        table.insert(pending_events, {
+            type = "EnemyDefeated",
+            wave = enemy.wave,
+            enemy_id = enemy.enemy_id,
+            enemy_instance_id = enemy.instance_id,
+            target_player_id = enemy.target_player_id,
+            source_piece_instance_id = event.source_piece_instance_id,
+            health = enemy.health,
+            is_boss = enemy.is_boss,
+        })
+    end
+end
+
+local function handle_block_requested(event)
+    require_positive_integer(event.enemy_instance_id, "enemy_instance_id")
+    require_positive_integer(event.piece_instance_id, "piece_instance_id")
+    require_non_negative_number(event.block_progress, "block_progress")
+
+    local enemy = enemies_by_id[event.enemy_instance_id]
+
+    if enemy == nil or enemy.status ~= "Alive" then
+        return
+    end
+
+    if enemy.blocked_by_piece_instance_id ~= nil then
+        return
+    end
+
+    enemy.blocked_by_piece_instance_id = event.piece_instance_id
+    enemy.path_progress = math.min(enemy.path_progress, event.block_progress)
+
+    table.insert(pending_events, {
+        type = "EnemyBlocked",
+        enemy_instance_id = enemy.instance_id,
+        piece_instance_id = event.piece_instance_id,
+        path_progress = enemy.path_progress,
+    })
+end
+
+local function handle_unblock_requested(event)
+    local enemy = enemies_by_id[event.enemy_instance_id]
+
+    if enemy == nil
+        or enemy.blocked_by_piece_instance_id ~= event.piece_instance_id then
+        return
+    end
+
+    enemy.blocked_by_piece_instance_id = nil
+
+    table.insert(pending_events, {
+        type = "EnemyUnblocked",
+        enemy_instance_id = enemy.instance_id,
+        piece_instance_id = event.piece_instance_id,
+    })
+end
+
+function M.handle_event(event)
+    if event.type == "EnemySpawnRequested" then
+        handle_spawn_requested(event)
+        return
+    end
+
+    if event.type == "EnemyDamageRequested" then
+        handle_damage_requested(event)
+        return
+    end
+
+    if event.type == "EnemyBlockRequested" then
+        handle_block_requested(event)
+        return
+    end
+
+    if event.type == "EnemyUnblockRequested" then
+        handle_unblock_requested(event)
+    end
+end
+
+local function copy_enemy(enemy)
+    return {
+        target_player_id = enemy.target_player_id,
+        instance_id = enemy.instance_id,
+        enemy_id = enemy.enemy_id,
+        wave = enemy.wave,
+        spawn_index = enemy.spawn_index,
+        health = enemy.health,
+        max_health = enemy.max_health,
+        status = enemy.status,
+        attack_damage = enemy.attack_damage,
+        attack_interval_seconds = enemy.attack_interval_seconds,
+        attack_type = enemy.attack_type,
+        is_boss = enemy.is_boss,
+        route_id = enemy.route_id,
+        path_speed = enemy.path_speed,
+        path_progress = enemy.path_progress,
+        blocked_by_piece_instance_id = enemy.blocked_by_piece_instance_id,
+    }
+end
+
+function M.get_snapshot()
+    local enemies = {}
+
+    for _, instance_id in ipairs(ordered_enemy_ids) do
+        local enemy = enemies_by_id[instance_id]
+        table.insert(enemies, copy_enemy(enemy))
+    end
+
+    return {
+        alive_count = alive_count,
+        enemies = enemies,
+    }
+end
+
+function M.get_alive_count()
+    return alive_count
+end
+
+function M.get_boss_result(wave)
+    local boss = nil
+
+    for _, instance_id in ipairs(ordered_enemy_ids) do
+        local enemy = enemies_by_id[instance_id]
+        if enemy.wave == wave and enemy.is_boss then
+            if boss ~= nil then
+                error("Boss wave contains more than one boss: " .. wave)
+            end
+            boss = enemy
+        end
+    end
+
+    if boss == nil then
+        error("Boss not found for wave: " .. wave)
+    end
+
+    if boss.status == "Defeated" then
+        return "Victory"
+    end
+
+    if boss.status == "ReachedEndpoint" then
+        return "Defeat"
+    end
+
+    return nil
+end
+
+function M.drain_events()
+    local events = pending_events
+    pending_events = {}
+    return events
+end
+
+function M.update(delta_time)
+    for _, instance_id in ipairs(ordered_enemy_ids) do
+        local enemy = enemies_by_id[instance_id]
+        -- 被阻挡的敌人仍属于存活状态，但解除阻挡前不再推进路线进度。
+        if enemy.status == "Alive"
+            and enemy.blocked_by_piece_instance_id == nil then
+            enemy.path_progress = enemy.path_progress + enemy.path_speed * delta_time
+            if enemy.path_progress >= 1 then
+                enemy.path_progress = 1
+                enemy.status = "ReachedEndpoint"
+                alive_count = alive_count - 1
+                table.insert(pending_events, {
+                    type = "EnemyReachedEndpoint",
+                    wave = enemy.wave,
+                    enemy_id = enemy.enemy_id,
+                    spawn_index = enemy.spawn_index,
+                    enemy_instance_id = enemy.instance_id,
+                    target_player_id = enemy.target_player_id,
+                    is_boss = enemy.is_boss,
+                })
+            end
+        end
+    end
+end
+
+return M

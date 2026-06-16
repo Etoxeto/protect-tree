@@ -1,0 +1,252 @@
+local board = {
+    board_id = "PersonalDefense",
+    board_kind = "Personal",
+    width = 11,
+    height = 7,
+    origin_grid_x = 0,
+    origin_grid_y = 0,
+    reserve_capacity = 11,
+    temporary_reserve_capacity = 11,
+
+    terrain_definitions = {
+        Ground = {
+            allows_piece_deployment = true,
+            allows_enemy_route = true,
+        },
+        HighGround = {
+            allows_piece_deployment = true,
+            allows_enemy_route = false,
+        },
+        Obstacle = {
+            allows_piece_deployment = false,
+            allows_enemy_route = false,
+        },
+    },
+
+    zone_definitions = {
+        Battlefield = {
+            allows_battle_deployment = true,
+            accepts_reserve_piece = false,
+            allows_enemy_route = true,
+        },
+        Reserve = {
+            allows_battle_deployment = false,
+            accepts_reserve_piece = true,
+            allows_enemy_route = false,
+        },
+        TemporaryReserve = {
+            allows_battle_deployment = false,
+            accepts_reserve_piece = false,
+            accepts_overflow_piece = true,
+            auto_sell_on_battle_start = true,
+            allows_enemy_route = false,
+        },
+        Spawn = {
+            allows_battle_deployment = false,
+            accepts_reserve_piece = false,
+            allows_enemy_route = true,
+        },
+        Endpoint = {
+            allows_battle_deployment = false,
+            accepts_reserve_piece = false,
+            allows_enemy_route = true,
+        },
+    },
+
+    cells = {},
+    routes = {},
+    reserve_cell_ids = {},
+    temporary_reserve_cell_ids = {},
+}
+
+-- 与游戏画面和 DefaultSizeMap_11x7.asset 一致：文本顶部是棋盘后排，底部是前排。
+--.	Ground	0	地面棋子可部署，敌人可经过
+-- 1	HighGround	1	高台棋子可部署，敌人不经过
+-- 2	HighGround	2	二级高台
+-- 3	HighGround	3	三级高台
+-- X	Obstacle	0	不可部署，敌人不经过
+-- A	Obstacle	1	一级障碍
+-- B	Obstacle	2	二级障碍
+-- C	Obstacle	3	三级障碍
+local rows_from_back_to_front = {
+    "XXXXbbbbbbb", -- y = 6，最远离屏幕
+    "XXB1.......", -- y = 5
+    "XXA1.11...A", -- y = 4
+    "XAA..11...A", -- y = 3
+    "...........", -- y = 2
+    "AAAAAAAAAAA", -- y = 1，临时备战区
+    "11111111111", -- y = 0，最靠近屏幕的普通备战区
+}
+
+-- Cell ID 是不透明稳定标识。保留既有玩法测试常用 ID，其余 ID 由坐标稳定生成。
+local legacy_cell_ids = {
+    ["6,3"] = 101,
+    ["3,3"] = 102,
+    ["5,4"] = 103,
+    ["2,2"] = 104,
+}
+
+local function coord_key(x, y)
+    return x .. "," .. y
+end
+
+local function get_cell_id(x, y)
+    return legacy_cell_ids[coord_key(x, y)]
+        or (1000 + y * board.width + x + 1)
+end
+
+local function read_terrain(tile)
+    if tile == "." then
+        return "Ground", 0
+    end
+
+    if tile == "1" then
+        return "HighGround", 1
+    end
+
+    if tile == "2" then
+        return "HighGround", 2
+    end
+
+    if tile == "3" then
+        return "HighGround", 3
+    end
+
+    if tile == "X" or tile == "x" or tile == "#" then
+        return "Obstacle", 0
+    end
+
+    if tile == "A" or tile == "a" then
+        return "Obstacle", 1
+    end
+
+    if tile == "B" or tile == "b" then
+        return "Obstacle", 2
+    end
+
+    if tile == "C" or tile == "c" then
+        return "Obstacle", 3
+    end
+
+    error("Unknown board tile: " .. tostring(tile))
+end
+
+local function get_zone(x, y)
+    if x == 10 and (y == 2 or y == 5) then
+        return "Spawn"
+    end
+
+    if x == 2 and y == 2 then
+        return "Endpoint"
+    end
+
+    if y == 0 then
+        return "Reserve"
+    end
+
+    if y == 1 then
+        return "TemporaryReserve"
+    end
+
+    return "Battlefield"
+end
+
+local function get_visual_key(terrain, zone)
+    if zone == "Reserve" then
+        return "reserve"
+    end
+
+    if zone == "TemporaryReserve" then
+        return "temporary_reserve"
+    end
+
+    if zone == "Spawn" then
+        return "spawn"
+    end
+
+    if zone == "Endpoint" then
+        return "endpoint"
+    end
+
+    if terrain == "HighGround" then
+        return "high_ground"
+    end
+
+    return string.lower(terrain)
+end
+
+local cells_by_coord = {}
+
+for y = 0, board.height - 1 do
+    -- 地图文本按画面方向从后往前书写，构建时再换算为权威 grid_y。
+    local row = rows_from_back_to_front[board.height - y]
+
+    for x = 0, board.width - 1 do
+        local terrain, visual_height = read_terrain(string.sub(row, x + 1, x + 1))
+        local zone = get_zone(x, y)
+        local cell_id = get_cell_id(x, y)
+        local cell = {
+            terrain = terrain,
+            zone = zone,
+            grid_x = x,
+            grid_y = y,
+            visual_height = visual_height,
+            visual_key = get_visual_key(terrain, zone),
+            route_positions = {},
+        }
+
+        board.cells[cell_id] = cell
+        cells_by_coord[coord_key(x, y)] = cell_id
+
+        -- 备战区顺序就是棋子自动落位顺序，保持从屏幕左侧到右侧稳定分配。
+        if zone == "Reserve" then
+            table.insert(board.reserve_cell_ids, cell_id)
+        elseif zone == "TemporaryReserve" then
+            table.insert(board.temporary_reserve_cell_ids, cell_id)
+        end
+    end
+end
+
+local function add_route(route_id, coordinates)
+    local samples = {}
+    local last_index = #coordinates - 1
+
+    for index, coordinate in ipairs(coordinates) do
+        local x = coordinate[1]
+        local y = coordinate[2]
+        local cell_id = cells_by_coord[coord_key(x, y)]
+        local path_progress = (index - 1) / last_index
+
+        table.insert(samples, {
+            cell_id = cell_id,
+            grid_x = x,
+            grid_y = y,
+            path_progress = path_progress,
+        })
+        board.cells[cell_id].route_positions[route_id] = path_progress
+    end
+
+    board.routes[route_id] = {
+        start_progress = 0,
+        endpoint_progress = 1,
+        samples = samples,
+    }
+end
+
+add_route(1, {
+    { 10, 2 }, { 9, 2 },  { 9 , 3 }, { 9 , 4 }, { 9 , 5 }, { 8 , 5 },{ 7 , 5 }, { 7 , 4 },{ 7 , 3 },{ 7, 2 }, { 6, 2 }, { 5, 2},
+    { 4, 2 }, { 3, 2 }, { 2, 2 },
+})
+
+add_route(2, {
+    { 10, 5 }, { 9, 5 }, { 8, 5 }, { 7, 5 }, { 6, 5 }, { 5, 5 },
+    { 4, 5 }, { 4, 4 }, { 4, 3 }, { 4, 2 }, { 3, 2 }, { 2, 2 },
+})
+
+board.spawn_cell_ids = {
+    cells_by_coord[coord_key(10, 2)],
+    cells_by_coord[coord_key(10, 5)],
+}
+board.endpoint_cell_id = cells_by_coord[coord_key(2, 2)]
+
+return board

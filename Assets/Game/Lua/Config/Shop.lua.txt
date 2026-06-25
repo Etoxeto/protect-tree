@@ -1,4 +1,5 @@
 return {
+    random_seed = 20260625,
     rarity_count = 6,
     refresh_cost = 1,
     levels = {

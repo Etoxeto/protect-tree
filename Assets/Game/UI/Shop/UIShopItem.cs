@@ -29,11 +29,11 @@ namespace ProtectTree.Runtime.UI
         private Button _purchaseButton;
         private Action<int> _purchaseRequested;
         private int _slotIndex;
+        private bool _purchaseButtonListenerRegistered;
 
         private void Awake()
         {
-            _purchaseButton = GetComponent<Button>();
-            _purchaseButton.onClick.AddListener(RequestPurchase);
+            EnsurePurchaseButtonListener();
 
             if (qualityText == null && qualityBackground != null)
             {
@@ -45,12 +45,17 @@ namespace ProtectTree.Runtime.UI
 
         private void OnDestroy()
         {
-            _purchaseButton?.onClick.RemoveListener(RequestPurchase);
+            if (_purchaseButton != null && _purchaseButtonListenerRegistered)
+            {
+                _purchaseButton.onClick.RemoveListener(RequestPurchase);
+                _purchaseButtonListenerRegistered = false;
+            }
         }
 
         public void Initialize(Action<int> purchaseRequested)
         {
             _purchaseRequested = purchaseRequested;
+            EnsurePurchaseButtonListener();
         }
 
         public void Render(
@@ -105,7 +110,12 @@ namespace ProtectTree.Runtime.UI
             }
 
             RenderSynergies(offer);
-            _purchaseButton.interactable = canInspect;
+            Button purchaseButton = EnsurePurchaseButton();
+            if (purchaseButton != null)
+            {
+                purchaseButton.interactable = canInspect;
+            }
+
             SetConfirmFx(showConfirmFx && canPurchase);
         }
 
@@ -165,6 +175,28 @@ namespace ProtectTree.Runtime.UI
         private void RequestPurchase()
         {
             _purchaseRequested?.Invoke(_slotIndex);
+        }
+
+        private Button EnsurePurchaseButton()
+        {
+            if (_purchaseButton == null)
+            {
+                _purchaseButton = GetComponent<Button>();
+            }
+
+            return _purchaseButton;
+        }
+
+        private void EnsurePurchaseButtonListener()
+        {
+            Button purchaseButton = EnsurePurchaseButton();
+            if (purchaseButton == null || _purchaseButtonListenerRegistered)
+            {
+                return;
+            }
+
+            purchaseButton.onClick.AddListener(RequestPurchase);
+            _purchaseButtonListenerRegistered = true;
         }
 
         private void SetConfirmFx(bool isVisible)

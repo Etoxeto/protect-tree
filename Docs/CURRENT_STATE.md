@@ -102,6 +102,12 @@ Player economy defaults are in `Assets/Game/Lua/Config/Players.lua.txt`:
 - each later wave adds `round_reward_per_wave_increment` more gold. With the
   current default, wave 1/2/3 settlement rewards are 5/6/7 gold.
 
+Shop defaults are in `Assets/Game/Lua/Config/Shop.lua.txt`:
+
+- `random_seed` drives deterministic Host/Lua shop generation;
+- players use independent shop sequences, so equal level and refresh count no
+  longer force identical offers.
+
 Designer-facing editing guide: `Docs/GAME_DATA_GUIDE.md`.
 
 ## Board Rules

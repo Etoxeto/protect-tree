@@ -677,6 +677,7 @@ Assets/Game/Lua/Config/Shop.lua.txt
 
 ```lua
 return {
+    random_seed = 20260625,
     rarity_count = 6,
     refresh_cost = 2,
     levels = {
@@ -696,6 +697,7 @@ return {
 
 | 字段 | 说明 |
 | --- | --- |
+| `random_seed` | 商店确定性随机种子。Host/Lua 权威端用它生成每名玩家的独立商店序列 |
 | `rarity_count` | 品质数量。当前为 6，不建议随意修改 |
 | `refresh_cost` | 刷新商店花费 |
 | `levels` | 商店等级配置 |

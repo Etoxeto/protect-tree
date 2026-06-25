@@ -5,11 +5,15 @@ local synergy_configs = require("Config.Synergies")
 
 local M = {}
 
+local RngModulus = 2147483647
+local RngMultiplier = 48271
+
 local active_player_configs = {}
 local shops_by_player_id = {}
 local ordered_player_ids = {}
 local piece_pools_by_rarity = {}
 local pending_events = {}
+local shop_random_seed = 1
 
 local function require_positive_integer(value, field_name)
     if type(value) ~= "number" or value <= 0 or value % 1 ~= 0 then
@@ -47,6 +51,44 @@ local function get_level_config(level)
     end
 
     return config
+end
+
+local function reset_random_seed(session_options)
+    local seed = session_options ~= nil
+        and session_options.shop_random_seed
+        or shop_config.random_seed
+        or 1
+
+    require_non_negative_integer(seed, "shop_random_seed")
+
+    shop_random_seed = math.floor(seed) % RngModulus
+    if shop_random_seed <= 0 then
+        shop_random_seed = 1
+    end
+end
+
+local function get_player_roll_offset(
+    player_id,
+    level,
+    refresh_index,
+    slot_index,
+    salt,
+    max_value)
+    require_positive_integer(max_value, "shop_roll_max_value")
+
+    if player_id == 1 then
+        return 0
+    end
+
+    local state = shop_random_seed
+    state = (state + player_id * 1103) % RngModulus
+    state = (state + level * 9176) % RngModulus
+    state = (state + refresh_index * 37) % RngModulus
+    state = (state + slot_index * 199) % RngModulus
+    state = (state + salt * 7919) % RngModulus
+    state = (state * RngMultiplier) % RngModulus
+
+    return state % max_value
 end
 
 local function build_piece_pools()
@@ -88,10 +130,20 @@ local function build_piece_pools()
     end
 end
 
-local function select_rarity(level, refresh_index, slot_index)
+local function select_rarity(player_id, level, refresh_index, slot_index)
     local weights = get_level_config(level).rarity_weights
-    -- Demo 使用确定性掷点，保证相同输入必定生成相同商店；联网时可替换为服务端种子随机。
-    local roll = ((refresh_index * 37 + slot_index * 17 - 1) % 100) + 1
+    -- 商店由 Lua 权威端确定性生成，但每个玩家会得到独立序列。
+    local roll = ((
+        refresh_index * 37
+        + slot_index * 17
+        + get_player_roll_offset(
+            player_id,
+            level,
+            refresh_index,
+            slot_index,
+            1,
+            100)
+        - 1) % 100) + 1
     local cumulative_weight = 0
     local selected_rarity = nil
 
@@ -111,7 +163,7 @@ local function select_rarity(level, refresh_index, slot_index)
         return selected_rarity
     end
 
-    -- 尚未配置棋子的高品质向低品质回退；未来添加该品质棋子后，其预留权重会自动生效。
+    -- 尚未配置棋子的高品质先向低品质回退；以后补充该品质棋子后，预留权重会自动生效。
     for rarity = selected_rarity - 1, 1, -1 do
         if #piece_pools_by_rarity[rarity] > 0 then
             return rarity
@@ -140,13 +192,23 @@ local function copy_synergies(piece_config)
     return copied_synergies
 end
 
-local function build_offers(refresh_index, level)
+local function build_offers(player_id, refresh_index, level)
     local offers = {}
 
     for slot_index = 1, get_level_config(level).offer_count do
-        local rarity = select_rarity(level, refresh_index, slot_index)
+        local rarity = select_rarity(player_id, level, refresh_index, slot_index)
         local pool = piece_pools_by_rarity[rarity]
-        local pool_index = ((refresh_index + slot_index - 2) % #pool) + 1
+        local pool_index = ((
+            refresh_index
+            + slot_index
+            + get_player_roll_offset(
+                player_id,
+                level,
+                refresh_index,
+                slot_index,
+                rarity + 10,
+                #pool)
+            - 2) % #pool) + 1
         local piece_id = pool[pool_index]
         local piece_config = piece_configs[piece_id]
         local level_one_config = piece_config.levels[1]
@@ -252,6 +314,7 @@ function M.start(session_options)
     ordered_player_ids = {}
     pending_events = {}
     validate_config()
+    reset_random_seed(session_options)
     build_piece_pools()
 
     active_player_configs, ordered_player_ids =
@@ -269,7 +332,7 @@ function M.start(session_options)
             level = 1,
             refresh_index = 1,
             is_locked = false,
-            offers = build_offers(1, 1),
+            offers = build_offers(player_id, 1, 1),
         }
     end
 end
@@ -297,7 +360,7 @@ function M.refresh(player_id, reason)
     local shop = get_shop(player_id)
 
     shop.refresh_index = shop.refresh_index + 1
-    shop.offers = build_offers(shop.refresh_index, shop.level)
+    shop.offers = build_offers(player_id, shop.refresh_index, shop.level)
 
     table.insert(pending_events, {
         type = "ShopRefreshed",
@@ -409,6 +472,7 @@ function M.shutdown()
     ordered_player_ids = {}
     piece_pools_by_rarity = {}
     pending_events = {}
+    shop_random_seed = 1
 end
 
 return M

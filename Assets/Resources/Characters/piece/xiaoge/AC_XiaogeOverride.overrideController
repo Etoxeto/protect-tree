@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!221 &22100000
+AnimatorOverrideController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: AC_XiaogeOverride
+  m_Controller: {fileID: 9100000, guid: 2b8a46cf88b1b26428adadb4cd76d305, type: 2}
+  m_Clips:
+  - m_OriginalClip: {fileID: 7400000, guid: 8371751097a97f346b801904a36cf126, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: c519ab9c6ce176d41947983a24833507, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 5976fc8f47da4494e9b1aa599fb752a2, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 25d0bf8ed6c159c4c9883fb7e6dd9e90, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 2f876d0c604fb834390afeeadf6011b3, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 5f47cce9b78a5374f911ce71858183da, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: d5e9256407952be4b8b497bc85cd0f5f, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 9c1fae84ab5e1a54580724acf9eff528, type: 2}

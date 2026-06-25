@@ -5,11 +5,15 @@
 The first complete demo targets:
 
 - Two-player validation with data structures that support four players
-- Five normal waves and one shared boss wave
+- Configurable normal waves, currently six normal waves and one shared boss wave
 - Three chess pieces, three enemies, one boss, and two synergies
 - Fixed deployment cells
 - Local single player and LAN host/client
 - Placeholder art until the full gameplay loop is stable
+
+Planner-facing game data editing is documented in `Docs/GAME_DATA_GUIDE.md`.
+Use that guide when adding or adjusting pieces, enemies, synergies, waves,
+shop data, player numbers, flow timing, and Resources catalog entries.
 
 ## Milestones
 
@@ -103,7 +107,7 @@ synergies, unique-board-piece counting, authoritative damage bonuses, and
 synergy snapshots are implemented and passed owner-run validation. Three
 distinct melee enemy archetypes and differentiated normal-wave content are
 implemented and passed owner-run validation. The single-player authority now
-supports five normal waves, a Boss preparation and battle finish, explicit
+supports configurable normal waves, a Boss preparation and battle finish, explicit
 Victory/Defeat results, Boss endpoint defeat, and immediate defeat when all
 players are eliminated. This Boss-flow foundation passed owner-run validation.
 Authoritative player-ready state and all-surviving-player early
@@ -155,7 +159,7 @@ owner-run validation.
 Deliverables:
 
 - Preparation, battle, settlement, Boss preparation/battle, and end phases
-- Three fixed-grid pieces, three enemies, one boss, one path, and five normal waves
+- Three fixed-grid pieces, three enemies, one boss, one path, and configurable normal waves
 - Deterministic gameplay state separated from Unity views
 - Pseudo-3D personal-board presentation connected to authoritative board snapshots
 
@@ -175,14 +179,104 @@ checks, lobby snapshots, complete authoritative match snapshots, and client
 snapshot-order checks. A local two-player authority prototype now keeps the
 default scene single-player while allowing tests/debug entry points to start
 players 1 and 2, verify private shops, require all active players to ready, and
-spawn independent normal-wave enemies per alive player. No network transport,
-joint-defense flow, or multiplayer shared-Boss arena has been connected yet.
+spawn independent normal-wave enemies per alive player. The local authority now
+also includes joint-defense transfer/rescue and a board-hopping shared Boss.
+`LuaMatchCommandRouter` connects accepted host-side protocol commands to the
+existing Lua authority calls and reports Lua authority rejection as
+`GameplayRejected`, while `LuaMatchSnapshotFactory` creates recipient-scoped
+host snapshots from the same authority. `LuaLoopbackMatchHost` now composes
+command routing, authority ticking, and snapshot creation into one
+transport-free host pipeline. `MatchSnapshotReceiver` validates and caches
+recipient-scoped snapshots on the client side. `MatchCommandEnvelopeFactory`
+creates per-player sequenced command envelopes for the future client send path.
+`LoopbackMatchClient` closes the no-socket development loop between a local
+client endpoint and `LuaLoopbackMatchHost`. `IMatchHostTransport` and
+`IMatchClientTransport` now define the byte-level boundary for a future LAN
+package adapter, and `IMatchProtocolCodec` defines the protocol envelope to
+byte payload boundary. `BinaryMatchProtocolCodec` now serializes player command
+envelopes, recipient-scoped server snapshot envelopes, and lobby snapshots.
+`LoopbackMatchByteHost` connects that codec to the local loopback path so
+commands and snapshots can travel as `byte[]` before returning to envelope form.
+`EncodedLoopbackDebugInput` provides an opt-in Play Mode validation hook for
+that encoded path. `TcpMatchHostTransport` and `TcpMatchClientTransport` now
+provide the first direct-IP LAN byte transport using length-framed TCP payloads.
+`LobbyHostService` and `LobbyClientService` now provide the first room service:
+Host assigns player IDs, clients receive assignments, ready/name commands travel
+over the codec, and shared lobby snapshots are broadcast. `LanLobby` now exposes
+the first visible create/join/ready room flow. `MatchStartEnvelope` now connects
+the lobby Start button to a synchronized `SampleScene` transition: Host and
+clients enter the match with the same player count and each client's assigned
+local player ID; this flow has passed owner-run validation. `LanMatchRuntime`
+now preserves the LAN match identity across the transition into `SampleScene`
+and exposes it through `MatchSceneContext`; this identity handoff has passed
+owner-run validation. The first in-match LAN loop is now implemented for Ready,
+basic shop operations, and formal piece placement/sale: Client sends encoded
+player commands to Host, Host routes them through Lua authority, sends
+recipient-scoped snapshots back, and Client uses those Host snapshots when
+available. Host now also broadcasts recipient-scoped snapshots at a low fixed
+rate to bound in-match clients, giving the first LAN battle playback path for
+enemy movement and phase changes. Clients now automatically send a no-op
+`RequestSnapshot` command after connecting so Host can bind the in-match
+connection and return an initial authoritative snapshot before any gameplay
+click. Enemy presentation now smooths small snapshot position changes on the
+Client without predicting gameplay, and accepted-snapshot logs are throttled for
+readability. In-match identity binding now uses an explicit `MatchJoin` message
+before gameplay commands, replacing the earlier first-command binding shortcut;
+`MatchJoin` now validates a Host-authored token delivered during match start,
+and Host preserves that token table across scene LuaRuntime binding and match
+transport rebuilds. The LAN Demo now also supports short reconnect for the same
+running Client process: after Host observes the old match connection disconnect,
+the Client may reconnect with the same player ID and token and resume receiving
+authoritative snapshots. The first formal observation entry is implemented:
+player info entries can switch the currently observed active player, with `F1`
+to `F4` as a keyboard fallback, while board interaction remains restricted to
+the local player's board. Authoritative match snapshots now carry public match
+events: protocol version `8` covered joint-defense start, rescue, leak
+resolution, and final damage, and protocol version `9` extends the same path to
+shared Boss creation, target-board retargeting, damage, endpoint/defeat result,
+and final match result logs. Owner-provided Windows player logs have
+validated the normal `MatchJoin`/token path, scene-bind token preservation,
+periodic snapshot playback, and Client command round trips. Owner-run
+observation switching, LAN joint-defense event validation, LAN shared Boss
+event validation, and controlled short reconnect validation have also passed.
+LAN Client local Lua simulation is now paused after scene entry, removing
+misleading non-authoritative phase logs; owner-provided Host and Client logs
+confirmed that this pause does not break snapshot-driven joint-defense, Boss,
+or match-end playback. A small LAN lifecycle feedback pass adds minimal
+connection/reconnect/failure labels and popups for owner-run validation, but
+this is a supporting technical slice rather than the player-facing multiplayer
+flow UI.
+Bandwidth profiling, broader effect playback, saved-token process resume,
+reconnect token lifetime rules, and richer spectator playback are still later
+multiplayer work.
 
 Deliverables:
 
 - Authoritative lobby and match state
 - Join, ready, shop, deployment, battle, and settlement synchronization
 - Two-device LAN play; four-player-capable protocol
+
+Current LAN stabilization stage goals:
+
+1. Confirm LAN Client local Lua simulation is paused while Host snapshots still
+   drive gameplay. Status: passed through owner-provided dual-client logs.
+2. Add a controlled short reconnect validation path. Status: passed through
+   owner-provided dual-client logs using the `Ctrl+F5` Client debug disconnect.
+   Returning to menu and closing the process remain intentional session exit
+   cases, not reconnect.
+3. Make player-facing multiplayer flow readable. Status: pending dedicated UI.
+   The UI should explain waiting for other players, ready state, whose board is
+   being watched, personal defense, joint defense, rescued/final leaks, shared
+   Boss target, and match-end cause. It should not expose technical connection
+   states unless the player must act.
+4. Clarify and validate Host/Client cleanup behavior for leaving a lobby,
+   leaving a match, Host shutdown, and match-end return flow.
+5. Exercise command, snapshot, public-event, and observation behavior around
+   reconnect or temporary transport loss.
+6. Prepare an Android Client LAN smoke-test path after the Windows two-client
+   lifecycle is stable.
+7. Only after LAN lifecycle stability, return to feedback/content work such as
+   sound, damage/gold effects, balance, and additional pieces or enemies.
 
 ### M5 - Joint Defense and Spectating
 
@@ -207,7 +301,7 @@ Scope fallback:
 
 Deliverables:
 
-- One shared boss arena for surviving players
+- One shared boss state that visits surviving players' personal boards
 - Host plus Relay connection flow
 - Dedicated Server build exercise
 - Script, content, and protocol versioning
@@ -222,7 +316,9 @@ The agreed rendering direction is:
    authority.
 3. Render only the currently observed player's pieces, enemies, animations, and
    effects; switching players does not rebuild static terrain.
-4. Use a separate shared Boss board view for surviving players.
+4. Reuse the personal-board view for Boss battle. The shared boss authority
+   state retargets between surviving players' boards instead of requiring one
+   oversized shared arena.
 5. Profile the organized runtime implementation before adding Editor-time mesh
    baking or material batching.
 
@@ -244,8 +340,25 @@ changes gameplay rules, architecture boundaries, scene/UI workflow, validation
 status, or agreed development direction, Codex must update the matching
 documentation in the same task.
 
+As of 2026-06-25, `Docs/CURRENT_STATE.md` is the required fast-start context
+document for new tasks. It summarizes the current authority model, LAN state,
+board/Boss rules, validation agreement, and common traps. Use it before reading
+the longer milestone history.
+
+Windows build clients now include a development log overlay for owner-run LAN
+validation. Press `F12` in the packaged Windows player to view recent logs,
+error stacks, and the `Player.log` folder path.
+Windows clients also run in background while unfocused so multi-window LAN tests
+continue dispatching network events.
+
 ## Pending Decisions
 
 - Company name and final application identifier
 - Exact networking service used for Relay/session discovery
 - Final content names, values, and art direction
+- Consumable item system implementation timing. Planned first items are
+  `Beacon` and `Copy`; both refresh in equipment slots, are bought with gold,
+  occupy reserve cells after purchase, and are dragged onto pieces to use.
+  `Copy` should be implemented before `Beacon` because it can reuse level-1
+  piece grant logic, while `Beacon` requires cross-player transfer and LAN
+  validation. Detailed deferred rules are in `Docs/CURRENT_STATE.md`.

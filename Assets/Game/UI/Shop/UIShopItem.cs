@@ -24,6 +24,7 @@ namespace ProtectTree.Runtime.UI
         [SerializeField] private Image costBackground;
         [SerializeField] private TextMeshProUGUI costText;
         [SerializeField] private UISynergy[] synergies;
+        [SerializeField] private Image confirmFx;
 
         private Button _purchaseButton;
         private Action<int> _purchaseRequested;
@@ -38,6 +39,8 @@ namespace ProtectTree.Runtime.UI
             {
                 qualityText = qualityBackground.GetComponentInChildren<TextMeshProUGUI>(true);
             }
+
+            SetConfirmFx(false);
         }
 
         private void OnDestroy()
@@ -50,7 +53,12 @@ namespace ProtectTree.Runtime.UI
             _purchaseRequested = purchaseRequested;
         }
 
-        public void Render(ShopOfferSnapshot offer, bool canAfford, bool canPurchase)
+        public void Render(
+            ShopOfferSnapshot offer,
+            bool canAfford,
+            bool canPurchase,
+            bool showConfirmFx = false,
+            bool canInspect = true)
         {
             gameObject.SetActive(true);
             _slotIndex = offer.SlotIndex;
@@ -71,7 +79,7 @@ namespace ProtectTree.Runtime.UI
             SetImageSprite(characterImage, $"UI/Characters/{offer.Portrait}");
             SetImageSprite(
                 characterClassIcon,
-                $"UI/Icons/CharacterType/role_icon_{offer.ClassId}_transparent");
+                $"UI/Icons/CharacterType/{offer.ClassId}");
 
             if (nameArea != null)
             {
@@ -81,6 +89,7 @@ namespace ProtectTree.Runtime.UI
             if (characterNameText != null)
             {
                 characterNameText.text = offer.DisplayName;
+                characterNameText.color = Color.white;
             }
 
             if (qualityText != null)
@@ -96,17 +105,74 @@ namespace ProtectTree.Runtime.UI
             }
 
             RenderSynergies(offer);
-            _purchaseButton.interactable = canPurchase;
+            _purchaseButton.interactable = canInspect;
+            SetConfirmFx(showConfirmFx && canPurchase);
+        }
+
+        public void RenderReadOnly(PieceSnapshot piece, bool isOnBoard)
+        {
+            if (piece == null)
+            {
+                Hide();
+                return;
+            }
+
+            Render(
+                new ShopOfferSnapshot(
+                    0,
+                    piece.PieceId,
+                    piece.DisplayName,
+                    piece.Portrait,
+                    piece.ClassId,
+                    piece.Rarity,
+                    piece.SellValue,
+                    piece.Synergies,
+                    false),
+                true,
+                false,
+                canInspect: false);
+
+            if (!isOnBoard)
+            {
+                ApplyDisplayTint(Gray);
+            }
         }
 
         public void Hide()
         {
+            SetConfirmFx(false);
             gameObject.SetActive(false);
+        }
+
+        public bool ContainsScreenPoint(Vector2 screenPoint)
+        {
+            if (!(transform is RectTransform rectTransform))
+            {
+                return false;
+            }
+
+            Canvas canvas = GetComponentInParent<Canvas>();
+            Camera eventCamera = canvas != null
+                && canvas.renderMode != RenderMode.ScreenSpaceOverlay
+                    ? canvas.worldCamera
+                    : null;
+            return RectTransformUtility.RectangleContainsScreenPoint(
+                rectTransform,
+                screenPoint,
+                eventCamera);
         }
 
         private void RequestPurchase()
         {
             _purchaseRequested?.Invoke(_slotIndex);
+        }
+
+        private void SetConfirmFx(bool isVisible)
+        {
+            if (confirmFx != null)
+            {
+                confirmFx.gameObject.SetActive(isVisible);
+            }
         }
 
         private void RenderSynergies(ShopOfferSnapshot offer)
@@ -134,6 +200,19 @@ namespace ProtectTree.Runtime.UI
             }
         }
 
+        private void ApplyDisplayTint(Color color)
+        {
+            SetImageColor(backgroundImage, color);
+            SetImageColor(characterImage, color);
+            SetImageColor(nameArea, color);
+            SetImageColor(characterClassIcon, color);
+            SetImageColor(qualityBackground, color);
+            SetImageColor(costBackground, color);
+            SetTextColor(characterNameText, color);
+            SetTextColor(qualityText, color);
+            SetTextColor(costText, color);
+        }
+
         private static void SetImageSprite(Image image, string resourcePath)
         {
             if (image == null)
@@ -143,6 +222,22 @@ namespace ProtectTree.Runtime.UI
 
             image.sprite = UIResourceLoader.LoadSprite(resourcePath);
             image.color = Color.white;
+        }
+
+        private static void SetImageColor(Image image, Color color)
+        {
+            if (image != null)
+            {
+                image.color = color;
+            }
+        }
+
+        private static void SetTextColor(TextMeshProUGUI text, Color color)
+        {
+            if (text != null)
+            {
+                text.color = color;
+            }
         }
 
         private static string GetMainColorName(int rarity)

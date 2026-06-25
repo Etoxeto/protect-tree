@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ProtectTree.Core.Match;
 
 namespace ProtectTree.Core.Network
@@ -12,7 +13,8 @@ namespace ProtectTree.Core.Network
             EnemyRosterSnapshot enemies,
             PieceRosterSnapshot pieces,
             PlayerRosterSnapshot players,
-            ShopSnapshot shop)
+            ShopSnapshot shop,
+            IReadOnlyList<MatchEvent> events = null)
         {
             if (recipientPlayerId <= 0 || recipientPlayerId > GameLimits.MaxPlayers)
             {
@@ -29,6 +31,7 @@ namespace ProtectTree.Core.Network
             Pieces = pieces ?? throw new ArgumentNullException(nameof(pieces));
             Players = players ?? throw new ArgumentNullException(nameof(players));
             Shop = shop ?? throw new ArgumentNullException(nameof(shop));
+            Events = events ?? Array.Empty<MatchEvent>();
 
             // 每个客户端快照只携带接收者自己的商店，避免泄露其他玩家的私有商品。
             if (shop.PlayerId != recipientPlayerId)
@@ -55,5 +58,7 @@ namespace ProtectTree.Core.Network
         public PlayerRosterSnapshot Players { get; }
 
         public ShopSnapshot Shop { get; }
+
+        public IReadOnlyList<MatchEvent> Events { get; }
     }
 }

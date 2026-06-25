@@ -1,4 +1,5 @@
 using ProtectTree.Core.Match;
+using ProtectTree.Core.Network;
 using UnityEngine;
 
 namespace ProtectTree.Runtime.Presentation
@@ -11,6 +12,18 @@ namespace ProtectTree.Runtime.Presentation
 
         [SerializeField]
         private int localPlayerId = 1;
+
+        [SerializeField]
+        private bool debugUseObservedPlayer = true;
+
+        [SerializeField]
+        private string debugGrantPieceId = "Sprout";
+
+        [SerializeField]
+        private KeyCode debugDisconnectMatchTransportKey = KeyCode.F5;
+
+        [SerializeField]
+        private bool debugDisconnectRequiresControl = true;
 
         private int _selectedPieceInstanceId;
 
@@ -34,8 +47,10 @@ namespace ProtectTree.Runtime.Presentation
                 _selectedPieceInstanceId = context.SelectedPieceInstanceId;
             }
 
-            ClearInvalidSelection(context.Pieces);
+            int controlledPlayerId = GetControlledPlayerId(context);
+            ClearInvalidSelection(context.Pieces, controlledPlayerId);
             context.SelectPiece(_selectedPieceInstanceId);
+            HandleLanReconnectDebug(context);
 
             string phase = context.Flow.Phase;
             if (phase != "Preparation" && phase != "BossPreparation")
@@ -43,22 +58,34 @@ namespace ProtectTree.Runtime.Presentation
                 return;
             }
 
-            // 输入层只提交玩家意图；是否合法以及如何改变状态仍由 Lua 权威逻辑决定。
             if (Input.GetKeyDown(KeyCode.Space))
             {
-                context.Runtime.SetPlayerReady(localPlayerId, true);
+                if (!TrySendClientCommand(context, MatchCommand.SetReady(true)))
+                {
+                    context.Runtime.SetPlayerReady(controlledPlayerId, true);
+                }
+
                 return;
             }
 
-            HandlePurchase(context);
-            HandleRefresh(context);
-            HandleShopLock(context);
-            HandleShopUpgrade(context);
-            HandleSelection(context.Pieces);
-            HandleBench(context);
-            HandleSell(context);
-            HandleDeployment(context);
-            HandleFacing(context);
+            if (Input.GetKeyDown(KeyCode.F6))
+            {
+                context.Runtime.DebugEnterBossPreparation();
+                _selectedPieceInstanceId = 0;
+                context.SelectPiece(0);
+                return;
+            }
+
+            HandleDebugGrant(context, controlledPlayerId);
+            HandlePurchase(context, controlledPlayerId);
+            HandleRefresh(context, controlledPlayerId);
+            HandleShopLock(context, controlledPlayerId);
+            HandleShopUpgrade(context, controlledPlayerId);
+            HandleSelection(context.Pieces, controlledPlayerId);
+            HandleBench(context, controlledPlayerId);
+            HandleSell(context, controlledPlayerId);
+            HandleDeployment(context, controlledPlayerId);
+            HandleFacing(context, controlledPlayerId);
             context.SelectPiece(_selectedPieceInstanceId);
         }
 
@@ -67,7 +94,44 @@ namespace ProtectTree.Runtime.Presentation
             _selectedPieceInstanceId = 0;
         }
 
-        private void ClearInvalidSelection(PieceRosterSnapshot pieces)
+        private int GetControlledPlayerId(MatchSceneContext context)
+        {
+            if (debugUseObservedPlayer && context.ObservedPlayerId > 0)
+            {
+                return context.ObservedPlayerId;
+            }
+
+            return localPlayerId;
+        }
+
+        private void HandleLanReconnectDebug(MatchSceneContext context)
+        {
+            if (!Input.GetKeyDown(debugDisconnectMatchTransportKey))
+            {
+                return;
+            }
+
+            if (debugDisconnectRequiresControl
+                && !Input.GetKey(KeyCode.LeftControl)
+                && !Input.GetKey(KeyCode.RightControl))
+            {
+                return;
+            }
+
+            if (context.LanMatch == null)
+            {
+                Debug.LogWarning(
+                    "[ProtectTree][LAN Match] Debug reconnect test skipped because no LAN match runtime is active.",
+                    this);
+                return;
+            }
+
+            context.LanMatch.DebugDisconnectClientTransportForReconnectTest();
+        }
+
+        private void ClearInvalidSelection(
+            PieceRosterSnapshot pieces,
+            int controlledPlayerId)
         {
             if (_selectedPieceInstanceId == 0)
             {
@@ -76,7 +140,7 @@ namespace ProtectTree.Runtime.Presentation
 
             foreach (PieceSnapshot piece in pieces.Pieces)
             {
-                if (piece.OwnerPlayerId == localPlayerId
+                if (piece.OwnerPlayerId == controlledPlayerId
                     && piece.InstanceId == _selectedPieceInstanceId)
                 {
                     return;
@@ -86,8 +150,29 @@ namespace ProtectTree.Runtime.Presentation
             _selectedPieceInstanceId = 0;
         }
 
-        private void HandlePurchase(MatchSceneContext context)
+        private void HandleDebugGrant(
+            MatchSceneContext context,
+            int controlledPlayerId)
         {
+            if (!Input.GetKeyDown(KeyCode.G)
+                || string.IsNullOrWhiteSpace(debugGrantPieceId))
+            {
+                return;
+            }
+
+            _selectedPieceInstanceId =
+                context.Runtime.GrantPiece(controlledPlayerId, debugGrantPieceId);
+        }
+
+        private void HandlePurchase(
+            MatchSceneContext context,
+            int controlledPlayerId)
+        {
+            if (controlledPlayerId != context.LocalPlayerId)
+            {
+                return;
+            }
+
             int slotIndex = Input.GetKeyDown(KeyCode.Q)
                 ? 1
                 : Input.GetKeyDown(KeyCode.W)
@@ -101,47 +186,108 @@ namespace ProtectTree.Runtime.Presentation
 
             ShopOfferSnapshot offer = context.Shop.Offers[slotIndex - 1];
             if (!offer.IsSold
-                && CanAfford(context.Players, localPlayerId, offer.Cost))
+                && CanAfford(context.Players, controlledPlayerId, offer.Cost))
             {
+                if (TrySendClientCommand(
+                    context,
+                    MatchCommand.PurchaseShopOffer(slotIndex)))
+                {
+                    return;
+                }
+
                 _selectedPieceInstanceId =
-                    context.Runtime.PurchaseShopOffer(localPlayerId, slotIndex);
+                    context.Runtime.PurchaseShopOffer(controlledPlayerId, slotIndex);
             }
         }
 
-        private void HandleRefresh(MatchSceneContext context)
+        private void HandleRefresh(
+            MatchSceneContext context,
+            int controlledPlayerId)
         {
+            if (controlledPlayerId != context.LocalPlayerId)
+            {
+                return;
+            }
+
             if (Input.GetKeyDown(KeyCode.R)
                 && CanAfford(
                     context.Players,
-                    localPlayerId,
+                    controlledPlayerId,
                     context.Shop.RefreshCost))
             {
-                context.Runtime.RefreshShop(localPlayerId);
+                if (!TrySendClientCommand(context, MatchCommand.RefreshShop()))
+                {
+                    context.Runtime.RefreshShop(controlledPlayerId);
+                }
             }
         }
 
-        private void HandleShopUpgrade(MatchSceneContext context)
+        private void HandleShopUpgrade(
+            MatchSceneContext context,
+            int controlledPlayerId)
         {
+            if (controlledPlayerId != context.LocalPlayerId)
+            {
+                return;
+            }
+
             if (Input.GetKeyDown(KeyCode.U)
                 && context.Shop.CanUpgrade
                 && CanAfford(
                     context.Players,
-                    localPlayerId,
+                    controlledPlayerId,
                     context.Shop.UpgradeCost))
             {
-                context.Runtime.UpgradeShop(localPlayerId);
+                if (!TrySendClientCommand(context, MatchCommand.UpgradeShop()))
+                {
+                    context.Runtime.UpgradeShop(controlledPlayerId);
+                }
             }
         }
 
-        private void HandleShopLock(MatchSceneContext context)
+        private void HandleShopLock(
+            MatchSceneContext context,
+            int controlledPlayerId)
         {
+            if (controlledPlayerId != context.LocalPlayerId)
+            {
+                return;
+            }
+
             if (Input.GetKeyDown(KeyCode.L))
             {
-                context.Runtime.ToggleShopLock(localPlayerId);
+                if (!TrySendClientCommand(context, MatchCommand.ToggleShopLock()))
+                {
+                    context.Runtime.ToggleShopLock(controlledPlayerId);
+                }
             }
         }
 
-        private void HandleSelection(PieceRosterSnapshot pieces)
+        private bool TrySendClientCommand(
+            MatchSceneContext context,
+            MatchCommand command)
+        {
+            if (context.LanMatch == null
+                || !context.LanMatch.IsActive
+                || !context.LanMatch.IsClient)
+            {
+                return false;
+            }
+
+            if (!context.LanMatch.TrySendCommand(command))
+            {
+                Debug.LogWarning(
+                    $"Debug input command {command.Type} was not sent; waiting for LAN match transport.",
+                    this);
+            }
+
+            // LAN 客户端只发玩家意图，不直接修改本地 Lua 权威状态。
+            return true;
+        }
+
+        private void HandleSelection(
+            PieceRosterSnapshot pieces,
+            int controlledPlayerId)
         {
             if (!Input.GetKeyDown(KeyCode.Tab))
             {
@@ -151,7 +297,7 @@ namespace ProtectTree.Runtime.Presentation
             bool selectNext = _selectedPieceInstanceId == 0;
             foreach (PieceSnapshot piece in pieces.Pieces)
             {
-                if (piece.OwnerPlayerId != localPlayerId)
+                if (piece.OwnerPlayerId != controlledPlayerId)
                 {
                     continue;
                 }
@@ -168,35 +314,62 @@ namespace ProtectTree.Runtime.Presentation
             _selectedPieceInstanceId = 0;
         }
 
-        private void HandleBench(MatchSceneContext context)
+        private void HandleBench(
+            MatchSceneContext context,
+            int controlledPlayerId)
         {
             if (!Input.GetKeyDown(KeyCode.B))
             {
                 return;
             }
 
-            PieceSnapshot selectedPiece = FindSelectedPiece(context.Pieces);
-            PieceCapacitySnapshot capacity = FindCapacity(context.Pieces);
+            PieceSnapshot selectedPiece =
+                FindSelectedPiece(context.Pieces, controlledPlayerId);
+            PieceCapacitySnapshot capacity =
+                FindCapacity(context.Pieces, controlledPlayerId);
             if (selectedPiece != null
                 && selectedPiece.Location == "Board"
                 && capacity != null
                 && capacity.BenchCount < capacity.BenchCapacity)
             {
-                context.Runtime.BenchPiece(localPlayerId, _selectedPieceInstanceId);
+                if (TrySendClientCommand(
+                    context,
+                    MatchCommand.BenchPiece(_selectedPieceInstanceId)))
+                {
+                    return;
+                }
+
+                context.Runtime.BenchPiece(
+                    controlledPlayerId,
+                    _selectedPieceInstanceId);
             }
         }
 
-        private void HandleSell(MatchSceneContext context)
+        private void HandleSell(
+            MatchSceneContext context,
+            int controlledPlayerId)
         {
             if (Input.GetKeyDown(KeyCode.X)
-                && FindSelectedPiece(context.Pieces) != null)
+                && FindSelectedPiece(context.Pieces, controlledPlayerId) != null)
             {
-                context.Runtime.SellPiece(localPlayerId, _selectedPieceInstanceId);
+                if (TrySendClientCommand(
+                    context,
+                    MatchCommand.SellPiece(_selectedPieceInstanceId)))
+                {
+                    _selectedPieceInstanceId = 0;
+                    return;
+                }
+
+                context.Runtime.SellPiece(
+                    controlledPlayerId,
+                    _selectedPieceInstanceId);
                 _selectedPieceInstanceId = 0;
             }
         }
 
-        private void HandleDeployment(MatchSceneContext context)
+        private void HandleDeployment(
+            MatchSceneContext context,
+            int controlledPlayerId)
         {
             int cellId = Input.GetKeyDown(KeyCode.Alpha1)
                 ? 101
@@ -206,16 +379,25 @@ namespace ProtectTree.Runtime.Presentation
 
             if (_selectedPieceInstanceId != 0
                 && cellId != 0
-                && IsCellAvailable(context.Pieces, cellId))
+                && IsCellAvailable(context.Pieces, controlledPlayerId, cellId))
             {
+                if (TrySendClientCommand(
+                    context,
+                    MatchCommand.DeployPiece(_selectedPieceInstanceId, cellId)))
+                {
+                    return;
+                }
+
                 context.Runtime.DeployPiece(
-                    localPlayerId,
+                    controlledPlayerId,
                     _selectedPieceInstanceId,
                     cellId);
             }
         }
 
-        private void HandleFacing(MatchSceneContext context)
+        private void HandleFacing(
+            MatchSceneContext context,
+            int controlledPlayerId)
         {
             string facing = Input.GetKeyDown(KeyCode.UpArrow)
                 ? "Up"
@@ -227,8 +409,15 @@ namespace ProtectTree.Runtime.Presentation
 
             if (_selectedPieceInstanceId != 0 && facing != null)
             {
+                if (TrySendClientCommand(
+                    context,
+                    MatchCommand.SetPieceFacing(_selectedPieceInstanceId, facing)))
+                {
+                    return;
+                }
+
                 context.Runtime.SetPieceFacing(
-                    localPlayerId,
+                    controlledPlayerId,
                     _selectedPieceInstanceId,
                     facing);
             }
@@ -250,11 +439,13 @@ namespace ProtectTree.Runtime.Presentation
             return false;
         }
 
-        private PieceSnapshot FindSelectedPiece(PieceRosterSnapshot pieces)
+        private PieceSnapshot FindSelectedPiece(
+            PieceRosterSnapshot pieces,
+            int controlledPlayerId)
         {
             foreach (PieceSnapshot piece in pieces.Pieces)
             {
-                if (piece.OwnerPlayerId == localPlayerId
+                if (piece.OwnerPlayerId == controlledPlayerId
                     && piece.InstanceId == _selectedPieceInstanceId)
                 {
                     return piece;
@@ -264,11 +455,13 @@ namespace ProtectTree.Runtime.Presentation
             return null;
         }
 
-        private PieceCapacitySnapshot FindCapacity(PieceRosterSnapshot pieces)
+        private static PieceCapacitySnapshot FindCapacity(
+            PieceRosterSnapshot pieces,
+            int controlledPlayerId)
         {
             foreach (PieceCapacitySnapshot capacity in pieces.Players)
             {
-                if (capacity.PlayerId == localPlayerId)
+                if (capacity.PlayerId == controlledPlayerId)
                 {
                     return capacity;
                 }
@@ -277,11 +470,14 @@ namespace ProtectTree.Runtime.Presentation
             return null;
         }
 
-        private bool IsCellAvailable(PieceRosterSnapshot pieces, int cellId)
+        private bool IsCellAvailable(
+            PieceRosterSnapshot pieces,
+            int controlledPlayerId,
+            int cellId)
         {
             foreach (PieceSnapshot piece in pieces.Pieces)
             {
-                if (piece.OwnerPlayerId == localPlayerId
+                if (piece.OwnerPlayerId == controlledPlayerId
                     && piece.InstanceId != _selectedPieceInstanceId
                     && piece.CellId == cellId)
                 {

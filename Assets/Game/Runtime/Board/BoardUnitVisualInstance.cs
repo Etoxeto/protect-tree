@@ -1,5 +1,8 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using ProtectTree.Runtime;
+using ProtectTree.Runtime.VFX;
 
 namespace ProtectTree.Runtime.Board
 {
@@ -9,6 +12,7 @@ namespace ProtectTree.Runtime.Board
     public sealed class BoardUnitVisualInstance
     {
         private static readonly int AttackTrigger = Animator.StringToHash("atk");
+        private static readonly int BossAttackTrigger = Animator.StringToHash("atk_01");
         private static readonly int DieTrigger = Animator.StringToHash("die");
         private static readonly int RebornTrigger = Animator.StringToHash("reborn");
         private static readonly int MoveParameter = Animator.StringToHash("move");
@@ -20,7 +24,15 @@ namespace ProtectTree.Runtime.Board
         private readonly Vector3 _facingVisualBaseScale;
         private readonly Animator _animator;
         private readonly Collider2D _hitArea;
+        private readonly BoardUnitSocket _socket;
+        private readonly BoardPieceLevelVfx _levelVfx;
+        private readonly AnimationVfxTrigger _animationVfxTrigger;
+        private readonly Dictionary<SpriteRenderer, Color> _baseSpriteColors =
+            new Dictionary<SpriteRenderer, Color>();
         private SortingGroup _sortingGroup;
+        private string _facing = "Right";
+        private float _levelScaleMultiplier = 1f;
+        private bool _isTinted;
 
         private BoardUnitVisualInstance(
             Transform container,
@@ -30,6 +42,9 @@ namespace ProtectTree.Runtime.Board
             Transform selectionAnchor,
             Animator animator,
             Collider2D hitArea,
+            BoardUnitSocket socket,
+            BoardPieceLevelVfx levelVfx,
+            AnimationVfxTrigger animationVfxTrigger,
             SortingGroup sortingGroup)
         {
             _container = container;
@@ -40,6 +55,9 @@ namespace ProtectTree.Runtime.Board
             _facingVisualBaseScale = facingVisualRoot.localScale;
             _animator = animator;
             _hitArea = hitArea;
+            _socket = socket;
+            _levelVfx = levelVfx;
+            _animationVfxTrigger = animationVfxTrigger;
             _sortingGroup = sortingGroup;
         }
 
@@ -79,6 +97,8 @@ namespace ProtectTree.Runtime.Board
                 FindDescendant(root.transform, "Rig")
                 ?? FindDescendant(root.transform, "PSBroot")
                 ?? root.transform;
+            Transform healthBarAnchor = FindDescendant(root.transform, "HealthBarAnchor");
+            Transform selectionAnchor = FindDescendant(root.transform, "SelectionAnchor");
             Collider2D hitArea =
                 FindDescendant(root.transform, "HitArea")?.GetComponent<Collider2D>();
             if (hitArea != null)
@@ -87,14 +107,20 @@ namespace ProtectTree.Runtime.Board
                 hitArea.isTrigger = true;
             }
 
+            BoardPieceLevelVfx levelVfx = GetOrAddLevelVfx(root);
+            levelVfx.Initialize(selectionAnchor, GetLevelVfxSizeHint(root, hitArea));
+
             return new BoardUnitVisualInstance(
                 container,
                 root,
                 facingVisualRoot,
-                FindDescendant(root.transform, "HealthBarAnchor"),
-                FindDescendant(root.transform, "SelectionAnchor"),
+                healthBarAnchor,
+                selectionAnchor,
                 root.GetComponentInChildren<Animator>(true),
                 hitArea,
+                root.GetComponentInChildren<BoardUnitSocket>(true),
+                levelVfx,
+                root.GetComponentInChildren<AnimationVfxTrigger>(true),
                 sortingGroup);
         }
 
@@ -145,6 +171,20 @@ namespace ProtectTree.Runtime.Board
             return hasBounds;
         }
 
+        public Vector3 GetFirePointWorldPosition(Vector3 fallback)
+        {
+            return _socket != null
+                ? _socket.GetFirePointWorldPosition(fallback)
+                : fallback;
+        }
+
+        public Vector3 GetHitPointWorldPosition(Vector3 fallback)
+        {
+            return _socket != null
+                ? _socket.GetHitPointWorldPosition(fallback)
+                : fallback;
+        }
+
         public void SetSortingOrder(int sortingOrder)
         {
             if (Root == null)
@@ -162,13 +202,27 @@ namespace ProtectTree.Runtime.Board
             {
                 _sortingGroup.sortingOrder = sortingOrder;
             }
+
+            _animationVfxTrigger?.SetSortingOrder(sortingOrder + 8);
         }
 
         public void SetFacing(string facing)
         {
-            Vector3 scale = _facingVisualBaseScale;
-            scale.x = Mathf.Abs(scale.x) * (facing == "Left" ? -1f : 1f);
-            _facingVisualRoot.localScale = scale;
+            _facing = string.IsNullOrEmpty(facing) ? "Right" : facing;
+            _animationVfxTrigger?.SetFacing(_facing);
+            ApplyFacingAndLevelScale();
+        }
+
+        public void SetLevel(int level)
+        {
+            _levelScaleMultiplier = GetLevelScaleMultiplier(level);
+            ApplyFacingAndLevelScale();
+            _levelVfx?.SetLevel(level);
+        }
+
+        public void PlayMergeBurst(int level)
+        {
+            _levelVfx?.PlayMergeBurst(level);
         }
 
         public void SetMoving(bool isMoving)
@@ -176,9 +230,73 @@ namespace ProtectTree.Runtime.Board
             SetBoolIfPresent(MoveParameter, isMoving);
         }
 
+        public void SetAnimationSpeed(float speed)
+        {
+            if (_animator != null)
+            {
+                _animator.speed = Mathf.Max(0.01f, speed);
+            }
+        }
+
+        public void SetEyesVisible(bool isVisible)
+        {
+            if (_socket?.Eyes == null)
+            {
+                return;
+            }
+
+            foreach (SpriteRenderer eye in _socket.Eyes)
+            {
+                if (eye != null)
+                {
+                    eye.gameObject.SetActive(isVisible);
+                }
+            }
+        }
+
+        public void SetTint(Color color)
+        {
+            CaptureTintTargets();
+
+            foreach (KeyValuePair<SpriteRenderer, Color> entry in _baseSpriteColors)
+            {
+                if (entry.Key == null)
+                {
+                    continue;
+                }
+
+                Color tinted = color;
+                tinted.a = entry.Value.a;
+                entry.Key.color = tinted;
+            }
+
+            _isTinted = true;
+        }
+
+        public void ClearTint()
+        {
+            if (!_isTinted)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<SpriteRenderer, Color> entry in _baseSpriteColors)
+            {
+                if (entry.Key != null)
+                {
+                    entry.Key.color = entry.Value;
+                }
+            }
+
+            _isTinted = false;
+        }
+
         public void TriggerAttack()
         {
-            SetTriggerIfPresent(AttackTrigger);
+            if (!SetTriggerIfPresent(AttackTrigger))
+            {
+                SetTriggerIfPresent(BossAttackTrigger);
+            }
         }
 
         public void TriggerDie()
@@ -189,6 +307,60 @@ namespace ProtectTree.Runtime.Board
         public void TriggerReborn()
         {
             SetTriggerIfPresent(RebornTrigger);
+        }
+
+        public void TriggerAnimator(string triggerName)
+        {
+            if (!string.IsNullOrWhiteSpace(triggerName))
+            {
+                SetTriggerIfPresent(Animator.StringToHash(triggerName));
+            }
+        }
+
+        public bool PlayAnimatorState(string stateName, float transitionSeconds = 0.05f)
+        {
+            if (_animator == null || string.IsNullOrWhiteSpace(stateName))
+            {
+                return false;
+            }
+
+            int stateHash = Animator.StringToHash(stateName);
+            if (!_animator.HasState(0, stateHash))
+            {
+                return false;
+            }
+
+            if (transitionSeconds > 0f)
+            {
+                _animator.CrossFadeInFixedTime(stateHash, transitionSeconds, 0, 0f);
+            }
+            else
+            {
+                _animator.Play(stateHash, 0, 0f);
+            }
+
+            return true;
+        }
+
+        public void PlayTransferIn()
+        {
+            if (!PlayAnimatorState("transfer_in"))
+            {
+                TriggerAnimator("transfer_in");
+            }
+        }
+
+        public void PlayTransferOut()
+        {
+            if (!PlayAnimatorState("transfer_out"))
+            {
+                TriggerAnimator("transfer_out");
+            }
+        }
+
+        public void QueueExplosionMagicTarget(Vector3 worldPosition)
+        {
+            _animationVfxTrigger?.QueueExplosionMagicTarget(worldPosition);
         }
 
         private Vector3 GetAnchorLocalPosition(Transform anchor, Vector3 fallback)
@@ -206,12 +378,15 @@ namespace ProtectTree.Runtime.Board
             }
         }
 
-        private void SetTriggerIfPresent(int parameterHash)
+        private bool SetTriggerIfPresent(int parameterHash)
         {
             if (HasParameter(parameterHash, AnimatorControllerParameterType.Trigger))
             {
                 _animator.SetTrigger(parameterHash);
+                return true;
             }
+
+            return false;
         }
 
         private bool HasParameter(
@@ -232,6 +407,44 @@ namespace ProtectTree.Runtime.Board
             }
 
             return false;
+        }
+
+        private void ApplyFacingAndLevelScale()
+        {
+            Vector3 scale = _facingVisualBaseScale;
+            scale.x = Mathf.Abs(scale.x)
+                * (_facing == "Left" ? -1f : 1f)
+                * _levelScaleMultiplier;
+            scale.y *= _levelScaleMultiplier;
+            _facingVisualRoot.localScale = scale;
+        }
+
+        private void CaptureTintTargets()
+        {
+            if (_baseSpriteColors.Count > 0 || _facingVisualRoot == null)
+            {
+                return;
+            }
+
+            // 只染色角色本体，不影响脚底光环、选中特效和血条等辅助表现。
+            foreach (SpriteRenderer renderer in
+                     _facingVisualRoot.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                if (renderer != null && !_baseSpriteColors.ContainsKey(renderer))
+                {
+                    _baseSpriteColors.Add(renderer, renderer.color);
+                }
+            }
+        }
+
+        private static float GetLevelScaleMultiplier(int level)
+        {
+            if (level >= 3)
+            {
+                return 1.16f;
+            }
+
+            return level >= 2 ? 1.1f : 1f;
         }
 
         private static Transform FindDescendant(Transform root, string objectName)
@@ -261,6 +474,35 @@ namespace ProtectTree.Runtime.Board
             }
 
             return sortingGroup;
+        }
+
+        private static BoardPieceLevelVfx GetOrAddLevelVfx(GameObject target)
+        {
+            BoardPieceLevelVfx levelVfx =
+                target.GetComponentInChildren<BoardPieceLevelVfx>(true);
+            if (levelVfx == null)
+            {
+                levelVfx = target.AddComponent<BoardPieceLevelVfx>();
+            }
+
+            return levelVfx;
+        }
+
+        private static Vector2 GetLevelVfxSizeHint(
+            GameObject root,
+            Collider2D hitArea)
+        {
+            if (root == null || hitArea == null)
+            {
+                return Vector2.zero;
+            }
+
+            Bounds bounds = hitArea.bounds;
+            Vector3 localMin = root.transform.InverseTransformPoint(bounds.min);
+            Vector3 localMax = root.transform.InverseTransformPoint(bounds.max);
+            return new Vector2(
+                Mathf.Abs(localMax.x - localMin.x),
+                Mathf.Abs(localMax.y - localMin.y));
         }
     }
 }

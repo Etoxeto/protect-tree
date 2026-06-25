@@ -12,5 +12,6 @@ namespace ProtectTree.Core.Network
         SetPieceFacing = 8,
         ToggleShopLock = 9,
         PlacePiece = 10,
+        RequestSnapshot = 11,
     }
 }

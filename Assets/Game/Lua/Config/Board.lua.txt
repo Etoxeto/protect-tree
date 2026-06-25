@@ -60,14 +60,14 @@ local board = {
 }
 
 -- 与游戏画面和 DefaultSizeMap_11x7.asset 一致：文本顶部是棋盘后排，底部是前排。
---.	Ground	0	地面棋子可部署，敌人可经过
--- 1	HighGround	1	高台棋子可部署，敌人不经过
--- 2	HighGround	2	二级高台
--- 3	HighGround	3	三级高台
--- X	Obstacle	0	不可部署，敌人不经过
--- A	Obstacle	1	一级障碍
--- B	Obstacle	2	二级障碍
--- C	Obstacle	3	三级障碍
+-- .  Ground      0  地面棋子可部署，敌人可经过
+-- 1  HighGround  1  高台棋子可部署，敌人不经过
+-- 2  HighGround  2  二级高台
+-- 3  HighGround  3  三级高台
+-- X  Obstacle    0  不可部署，敌人不经过
+-- A  Obstacle    1  一级障碍
+-- B  Obstacle    2  二级障碍
+-- C  Obstacle    3  三级障碍
 local rows_from_back_to_front = {
     "XXXXbbbbbbb", -- y = 6，最远离屏幕
     "XXB1.......", -- y = 5
@@ -242,6 +242,23 @@ add_route(2, {
     { 10, 5 }, { 9, 5 }, { 8, 5 }, { 7, 5 }, { 6, 5 }, { 5, 5 },
     { 4, 5 }, { 4, 4 }, { 4, 3 }, { 4, 2 }, { 3, 2 }, { 2, 2 },
 })
+
+-- Boss 专用路线：先沿 route 1 走到防守点前一格，再沿 route 2 逆向回到刷怪点前一格。
+add_route(3, {
+    { 10, 2 }, { 9, 2 }, { 9, 3 }, { 9, 4 }, { 9, 5 },
+    { 8, 5 }, { 7, 5 }, { 7, 4 }, { 7, 3 }, { 7, 2 },
+    { 6, 2 }, { 5, 2 }, { 4, 2 }, { 3, 2 },
+})
+
+add_route(4, {
+    { 3, 2 }, { 4, 2 }, { 4, 3 }, { 4, 4 }, { 4, 5 },
+    { 5, 5 }, { 6, 5 }, { 7, 5 }, { 8, 5 }, { 9, 5 },
+})
+
+board.boss_routes = {
+    outbound_route_id = 3,
+    return_route_id = 4,
+}
 
 board.spawn_cell_ids = {
     cells_by_coord[coord_key(10, 2)],

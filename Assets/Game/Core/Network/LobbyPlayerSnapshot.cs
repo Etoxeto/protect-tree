@@ -9,7 +9,8 @@ namespace ProtectTree.Core.Network
             string displayName,
             bool isConnected,
             bool isReady,
-            bool isHost)
+            bool isHost,
+            string avatarResourcePath = null)
         {
             if (playerId <= 0 || playerId > GameLimits.MaxPlayers)
             {
@@ -25,6 +26,7 @@ namespace ProtectTree.Core.Network
 
             PlayerId = playerId;
             DisplayName = displayName;
+            AvatarResourcePath = avatarResourcePath ?? string.Empty;
             IsConnected = isConnected;
             IsReady = isReady;
             IsHost = isHost;
@@ -33,6 +35,8 @@ namespace ProtectTree.Core.Network
         public int PlayerId { get; }
 
         public string DisplayName { get; }
+
+        public string AvatarResourcePath { get; }
 
         public bool IsConnected { get; }
 

@@ -7,5 +7,6 @@ namespace ProtectTree.Core.Network
         WrongMatch = 2,
         WrongPlayer = 3,
         StaleSequence = 4,
+        GameplayRejected = 5,
     }
 }

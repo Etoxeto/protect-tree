@@ -1,31 +1,310 @@
-local M  ={}
+local M = {}
 local waves = require("Config.Waves")
 local enemy_configs = require("Config.Enemies")
 local board = require("Config.Board")
 
+local RngModulus = 2147483647
+local RngMultiplier = 48271
+
 local current_wave = 0
-local enemy_id = nil
-local route_id = 0
-local remaining_count = 0  -- 该波次待刷怪数
-local spawn_index = 0  -- 已发出的生成请求数
-local interval_seconds = 0   -- 刷怪CD
-local seconds_until_next_spawn = 0
+local selected_preset_id = nil
+local spawn_groups = {}
+local spawn_index = 0
+local remaining_count = 0
 local is_active = false
-local pending_events = {} -- 已产生、尚未被外部消费的事件
+local is_completed = false
+local rng_state = 1
+local pending_events = {}
+
+local function require_positive_integer(value, field_name)
+    if type(value) ~= "number"
+        or value < 1
+        or value ~= math.floor(value) then
+        error(field_name .. " must be a positive integer: " .. tostring(value))
+    end
+end
+
+local function require_non_negative_number(value, field_name)
+    if type(value) ~= "number" or value < 0 then
+        error(field_name .. " must be a non-negative number: " .. tostring(value))
+    end
+end
+
+local function require_positive_number(value, field_name)
+    if type(value) ~= "number" or value <= 0 then
+        error(field_name .. " must be a positive number: " .. tostring(value))
+    end
+end
 
 local function reset_spawn_plan()
     current_wave = 0
-    enemy_id = nil
-    route_id = 0
-    remaining_count = 0
+    selected_preset_id = nil
+    spawn_groups = {}
     spawn_index = 0
-    interval_seconds = 0
-    seconds_until_next_spawn = 0
+    remaining_count = 0
     is_active = false
+    is_completed = false
+end
+
+local function reset_rng()
+    local seed = waves.random_seed or 1
+    if type(seed) ~= "number" then
+        error("Wave random_seed must be a number: " .. tostring(seed))
+    end
+
+    rng_state = math.floor(seed) % RngModulus
+    if rng_state <= 0 then
+        rng_state = 1
+    end
+end
+
+local function random_index(max_value)
+    require_positive_integer(max_value, "max_value")
+    rng_state = (rng_state * RngMultiplier) % RngModulus
+    return (rng_state % max_value) + 1
+end
+
+local function count_table_entries(list)
+    return type(list) == "table" and #list or 0
+end
+
+local function get_wave_pool(wave)
+    if type(waves.wave_pools) == "table" then
+        return waves.wave_pools[wave]
+    end
+
+    return waves[wave]
+end
+
+local function resolve_preset(wave)
+    local pool = get_wave_pool(wave)
+    if pool == nil then
+        error("Wave config not found: " .. tostring(wave))
+    end
+
+    -- Legacy format: waves[wave] = { enemy_id, route_id, count, interval_seconds }
+    if pool.enemy_id ~= nil then
+        return "Wave" .. tostring(wave), pool
+    end
+
+    local preset_id
+    if type(pool) == "string" then
+        preset_id = pool
+    elseif type(pool) == "table" and pool.preset_id ~= nil then
+        preset_id = pool.preset_id
+    elseif type(pool) == "table" and #pool > 0 then
+        preset_id = pool[random_index(#pool)]
+    else
+        error("Wave preset pool is empty: " .. tostring(wave))
+    end
+
+    if type(waves.presets) ~= "table" then
+        error("Wave presets table is missing")
+    end
+
+    local preset = waves.presets[preset_id]
+    if preset == nil then
+        error("Wave preset not found: " .. tostring(preset_id))
+    end
+
+    return preset_id, preset
+end
+
+local function normalize_legacy_preset(preset)
+    if preset.groups ~= nil then
+        return preset
+    end
+
+    return {
+        groups = {
+            {
+                group_id = "Default",
+                route_id = preset.route_id,
+                start_seconds = preset.start_seconds or 0,
+                interval_seconds = preset.interval_seconds,
+                enemies = {
+                    {
+                        enemy_id = preset.enemy_id,
+                        count = preset.count,
+                    },
+                },
+            },
+        },
+    }
+end
+
+local function normalize_group(group, group_index)
+    if group.enemies ~= nil then
+        return group
+    end
+
+    return {
+        group_id = group.group_id or ("Group" .. tostring(group_index)),
+        route_id = group.route_id,
+        start_seconds = group.start_seconds or 0,
+        interval_seconds = group.interval_seconds,
+        enemies = {
+            {
+                enemy_id = group.enemy_id,
+                count = group.count,
+            },
+        },
+    }
+end
+
+local function expand_enemy_queue(group, expects_boss)
+    local queue = {}
+    local boss_count = 0
+    if type(group.enemies) ~= "table" or #group.enemies == 0 then
+        error("Wave spawn group enemies must be a non-empty array")
+    end
+
+    for entry_index, entry in ipairs(group.enemies) do
+        local enemy_id = entry.enemy_id
+        if type(enemy_id) ~= "string" or enemy_id == "" then
+            error("Wave enemy_id is required at enemy entry " .. entry_index)
+        end
+
+        local enemy_config = enemy_configs[enemy_id]
+        if enemy_config == nil then
+            error("Wave enemy config not found: " .. tostring(enemy_id))
+        end
+
+        require_positive_integer(entry.count, "enemy count")
+
+        local is_boss = enemy_config.is_boss == true
+        if is_boss then
+            boss_count = boss_count + entry.count
+        end
+
+        if is_boss and not expects_boss then
+            error("Wave enemy type does not match battle phase: " .. enemy_id)
+        end
+
+        for _ = 1, entry.count do
+            table.insert(queue, {
+                enemy_id = enemy_id,
+                is_boss = is_boss,
+                spawn_scope = is_boss and "SharedBoss" or "PerPlayer",
+            })
+        end
+    end
+
+    return queue, boss_count
+end
+
+local function build_spawn_groups(preset, expects_boss)
+    preset = normalize_legacy_preset(preset)
+    if type(preset.groups) ~= "table" or #preset.groups == 0 then
+        error("Wave preset groups must be a non-empty array")
+    end
+
+    local groups = {}
+    local total_count = 0
+    local total_boss_count = 0
+
+    for group_index, raw_group in ipairs(preset.groups) do
+        local group = normalize_group(raw_group, group_index)
+        local route_id = group.route_id
+        require_positive_integer(route_id, "route_id")
+        if board.routes[route_id] == nil then
+            error("Wave route config not found: " .. tostring(route_id))
+        end
+
+        local start_seconds = group.start_seconds or 0
+        local interval_seconds = group.interval_seconds
+        require_non_negative_number(start_seconds, "start_seconds")
+        require_positive_number(interval_seconds, "interval_seconds")
+
+        local queue, boss_count = expand_enemy_queue(group, expects_boss)
+        total_count = total_count + #queue
+        total_boss_count = total_boss_count + boss_count
+
+        table.insert(groups, {
+            group_id = group.group_id or ("Group" .. tostring(group_index)),
+            route_id = route_id,
+            start_seconds = start_seconds,
+            interval_seconds = interval_seconds,
+            seconds_until_next_spawn = start_seconds,
+            queue = queue,
+            next_queue_index = 1,
+            is_completed = #queue == 0,
+        })
+    end
+
+    if expects_boss and total_boss_count ~= 1 then
+        error("Boss wave must spawn exactly one boss enemy")
+    end
+
+    return groups, total_count
+end
+
+local function request_enemy_spawn(group)
+    local entry = group.queue[group.next_queue_index]
+    if entry == nil then
+        return
+    end
+
+    spawn_index = spawn_index + 1
+    remaining_count = remaining_count - 1
+    group.next_queue_index = group.next_queue_index + 1
+
+    table.insert(pending_events, {
+        type = "EnemySpawnRequested",
+        wave = current_wave,
+        enemy_id = entry.enemy_id,
+        route_id = group.route_id,
+        spawn_index = spawn_index,
+        preset_id = selected_preset_id,
+        spawn_group_id = group.group_id,
+        spawn_scope = entry.spawn_scope,
+        is_boss = entry.is_boss,
+    })
+
+    if group.next_queue_index > #group.queue then
+        group.is_completed = true
+        group.seconds_until_next_spawn = 0
+    end
+end
+
+local function find_next_group()
+    local selected_group = nil
+
+    for _, group in ipairs(spawn_groups) do
+        if not group.is_completed then
+            if selected_group == nil
+                or group.seconds_until_next_spawn
+                    < selected_group.seconds_until_next_spawn then
+                selected_group = group
+            end
+        end
+    end
+
+    return selected_group
+end
+
+local function complete_spawn_plan()
+    is_active = false
+    is_completed = true
+
+    table.insert(pending_events, {
+        type = "WaveSpawnCompleted",
+        wave = current_wave,
+        preset_id = selected_preset_id,
+    })
+end
+
+local function try_complete_spawn_plan()
+    if is_completed or remaining_count > 0 then
+        return
+    end
+
+    complete_spawn_plan()
 end
 
 function M.start()
     reset_spawn_plan()
+    reset_rng()
     pending_events = {}
 end
 
@@ -33,99 +312,79 @@ function M.handle_event(event)
     if event.type ~= "PhaseChanged" then
         return
     end
+
     if event.phase ~= "Battle" and event.phase ~= "BossBattle" then
         reset_spawn_plan()
         return
     end
 
-    local config = waves[event.wave]
-
-    if config == nil then
-        error("Wave config not found: " .. event.wave)
-    end
-
-    -- 波次开始时立即验证内容引用，避免生成到一半才发现敌人配置缺失。
-    local enemy_config = enemy_configs[config.enemy_id]
-    if enemy_config == nil then
-        error("Wave enemy config not found: " .. tostring(config.enemy_id))
-    end
-
-    if board.routes[config.route_id] == nil then
-        error("Wave route config not found: " .. tostring(config.route_id))
-    end
-
+    local preset_id, preset = resolve_preset(event.wave)
     local expects_boss = event.phase == "BossBattle"
-    if (enemy_config.is_boss == true) ~= expects_boss then
-        error("Wave enemy type does not match battle phase: " .. config.enemy_id)
-    end
-
-    if expects_boss and config.count ~= 1 then
-        error("Boss wave must spawn exactly one enemy")
-    end
+    local groups, total_count = build_spawn_groups(preset, expects_boss)
 
     current_wave = event.wave
-    enemy_id = config.enemy_id
-    route_id = config.route_id
-    remaining_count = config.count
+    selected_preset_id = preset_id
+    spawn_groups = groups
     spawn_index = 0
-    interval_seconds = config.interval_seconds
-    seconds_until_next_spawn = 0
+    remaining_count = total_count
     is_active = remaining_count > 0
+    is_completed = false
 
-end
-
-local function request_enemy_spawn()
-    spawn_index = spawn_index + 1
-    remaining_count = remaining_count - 1
-
-    table.insert(pending_events, {
-        type = "EnemySpawnRequested",
-        wave = current_wave,
-        enemy_id = enemy_id,
-        route_id = route_id,
-        spawn_index = spawn_index,
-    })
-end
-
-local function complete_spawn_plan()
-    is_active = false
-    seconds_until_next_spawn = 0
-
-    table.insert(pending_events, {
-        type = "WaveSpawnCompleted",
-        wave = current_wave,
-    })
+    if remaining_count == 0 then
+        complete_spawn_plan()
+    end
 end
 
 function M.update(delta_time)
     if not is_active then
         return
     end
-    seconds_until_next_spawn = seconds_until_next_spawn - delta_time
 
-    while is_active and seconds_until_next_spawn <= 0 do
-        request_enemy_spawn()
-    
-        if remaining_count <= 0 then
-            complete_spawn_plan()
-        else
-            seconds_until_next_spawn =
-                seconds_until_next_spawn + interval_seconds
+    for _, group in ipairs(spawn_groups) do
+        if not group.is_completed then
+            group.seconds_until_next_spawn =
+                group.seconds_until_next_spawn - delta_time
+
+            while not group.is_completed
+                and group.seconds_until_next_spawn <= 0 do
+                request_enemy_spawn(group)
+
+                if not group.is_completed then
+                    group.seconds_until_next_spawn =
+                        group.seconds_until_next_spawn
+                        + group.interval_seconds
+                end
+            end
         end
     end
 
+    try_complete_spawn_plan()
 end
 
 function M.get_snapshot()
+    local next_group = find_next_group()
+    local next_enemy_id = nil
+    local next_route_id = 0
+    local seconds_until_next_spawn = 0
+
+    if next_group ~= nil then
+        local next_entry = next_group.queue[next_group.next_queue_index]
+        next_enemy_id = next_entry ~= nil and next_entry.enemy_id or nil
+        next_route_id = next_group.route_id
+        seconds_until_next_spawn =
+            math.max(next_group.seconds_until_next_spawn, 0)
+    end
+
     return {
         is_active = is_active,
         wave = current_wave,
-        enemy_id = enemy_id,
-        route_id = route_id,
+        enemy_id = next_enemy_id,
+        route_id = next_route_id,
         remaining_count = remaining_count,
         next_spawn_index = spawn_index + 1,
-        seconds_until_next_spawn =
-            math.max(seconds_until_next_spawn, 0),
+        seconds_until_next_spawn = seconds_until_next_spawn,
+        selected_preset_id = selected_preset_id,
+        active_group_count = count_table_entries(spawn_groups),
     }
 end
 

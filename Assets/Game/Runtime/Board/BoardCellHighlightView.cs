@@ -15,10 +15,15 @@ namespace ProtectTree.Runtime.Board
         private Material _runtimeFillMaterial;
         private Material _runtimeOutlineMaterial;
         private Material _runtimePlacementMaterial;
+        private Material _runtimeAttackRangeMaterial;
         private Material _placementMaterial;
+        private Material _attackRangeMaterial;
         private readonly List<GameObject> _placementHighlights =
             new List<GameObject>();
         private readonly List<Mesh> _placementMeshes = new List<Mesh>();
+        private readonly List<GameObject> _attackRangeHighlights =
+            new List<GameObject>();
+        private readonly List<Mesh> _attackRangeMeshes = new List<Mesh>();
 
         public void Initialize(
             Transform highlightRoot,
@@ -64,6 +69,14 @@ namespace ProtectTree.Runtime.Board
                     : CreateRuntimeMaterial(
                         new Color(0.2f, 1f, 0.65f, 0.18f),
                         out _runtimePlacementMaterial);
+            _attackRangeMaterial =
+                visualDefinition != null && visualDefinition.AttackRangeFillMaterial != null
+                    ? visualDefinition.AttackRangeFillMaterial
+                    : CreateRuntimeMaterial(
+                        visualDefinition != null
+                            ? visualDefinition.AttackRangeFillColor
+                            : new Color(1f, 0.28f, 0.05f, 0.3f),
+                        out _runtimeAttackRangeMaterial);
 
             SetVisible(false);
         }
@@ -72,6 +85,7 @@ namespace ProtectTree.Runtime.Board
         {
             SetVisible(false);
             ClearPlacementCells();
+            ClearAttackRangeCells();
 
             if (_highlightRoot != null)
             {
@@ -85,6 +99,7 @@ namespace ProtectTree.Runtime.Board
             DestroyRuntimeObject(_runtimeFillMaterial);
             DestroyRuntimeObject(_runtimeOutlineMaterial);
             DestroyRuntimeObject(_runtimePlacementMaterial);
+            DestroyRuntimeObject(_runtimeAttackRangeMaterial);
 
             _fillMesh = null;
             _fillRenderer = null;
@@ -92,7 +107,9 @@ namespace ProtectTree.Runtime.Board
             _runtimeFillMaterial = null;
             _runtimeOutlineMaterial = null;
             _runtimePlacementMaterial = null;
+            _runtimeAttackRangeMaterial = null;
             _placementMaterial = null;
+            _attackRangeMaterial = null;
             _projector = null;
             _sorting = null;
         }
@@ -158,18 +175,42 @@ namespace ProtectTree.Runtime.Board
 
         public void ClearPlacementCells()
         {
-            foreach (GameObject highlight in _placementHighlights)
+            ClearCellHighlights(_placementHighlights, _placementMeshes);
+        }
+
+        public void ShowAttackRangeCells(IEnumerable<BoardVisualCell> cells)
+        {
+            ClearAttackRangeCells();
+
+            if (cells == null
+                || _highlightRoot == null
+                || _projector == null
+                || _sorting == null)
             {
-                DestroyRuntimeObject(highlight);
+                return;
             }
 
-            foreach (Mesh mesh in _placementMeshes)
+            foreach (BoardVisualCell cell in cells)
             {
-                DestroyRuntimeObject(mesh);
-            }
+                if (cell == null)
+                {
+                    continue;
+                }
 
-            _placementHighlights.Clear();
-            _placementMeshes.Clear();
+                // 攻击范围高亮低于选中格和部署格，避免遮住当前操作焦点。
+                CreateCellHighlight(
+                    cell,
+                    "AttackRangeCell",
+                    _attackRangeMaterial,
+                    -2,
+                    _attackRangeHighlights,
+                    _attackRangeMeshes);
+            }
+        }
+
+        public void ClearAttackRangeCells()
+        {
+            ClearCellHighlights(_attackRangeHighlights, _attackRangeMeshes);
         }
 
         public void SetVisible(bool visible)
@@ -192,6 +233,23 @@ namespace ProtectTree.Runtime.Board
 
         private void CreatePlacementHighlight(BoardVisualCell cell)
         {
+            CreateCellHighlight(
+                cell,
+                "DeployableCell",
+                _placementMaterial,
+                -1,
+                _placementHighlights,
+                _placementMeshes);
+        }
+
+        private void CreateCellHighlight(
+            BoardVisualCell cell,
+            string namePrefix,
+            Material material,
+            int orderOffset,
+            List<GameObject> highlights,
+            List<Mesh> meshes)
+        {
             _projector.GetCellTopCorners(
                 cell,
                 out Vector3 frontLeft,
@@ -207,10 +265,10 @@ namespace ProtectTree.Runtime.Board
                 _highlightRoot.InverseTransformPoint(backLeft)
             };
 
-            GameObject target = new GameObject($"DeployableCell_{cell.CellId}");
+            GameObject target = new GameObject($"{namePrefix}_{cell.CellId}");
             target.transform.SetParent(_highlightRoot, false);
 
-            Mesh mesh = new Mesh { name = $"Mesh_DeployableCell_{cell.CellId}" };
+            Mesh mesh = new Mesh { name = $"Mesh_{namePrefix}_{cell.CellId}" };
             mesh.vertices = vertices;
             mesh.triangles = new[] { 0, 2, 1, 0, 3, 2 };
             mesh.RecalculateBounds();
@@ -219,11 +277,29 @@ namespace ProtectTree.Runtime.Board
             filter.sharedMesh = mesh;
 
             MeshRenderer renderer = target.AddComponent<MeshRenderer>();
-            renderer.sharedMaterial = _placementMaterial;
-            renderer.sortingOrder = _sorting.GetHighlightOrder(cell) - 1;
+            renderer.sharedMaterial = material;
+            renderer.sortingOrder = _sorting.GetHighlightOrder(cell) + orderOffset;
 
-            _placementHighlights.Add(target);
-            _placementMeshes.Add(mesh);
+            highlights.Add(target);
+            meshes.Add(mesh);
+        }
+
+        private static void ClearCellHighlights(
+            List<GameObject> highlights,
+            List<Mesh> meshes)
+        {
+            foreach (GameObject highlight in highlights)
+            {
+                DestroyRuntimeObject(highlight);
+            }
+
+            foreach (Mesh mesh in meshes)
+            {
+                DestroyRuntimeObject(mesh);
+            }
+
+            highlights.Clear();
+            meshes.Clear();
         }
 
         private static Material CreateRuntimeMaterial(Color color, out Material runtimeMaterial)

@@ -81,6 +81,30 @@ local function calculate_player_counts(player_id)
         initial_leak_count - rescued_count
 end
 
+local function copy_leaked_enemy_ids(player_id)
+    local copied = {}
+
+    for _, enemy_instance_id in ipairs(leaked_enemy_ids_by_player[player_id]) do
+        table.insert(copied, enemy_instance_id)
+    end
+
+    return copied
+end
+
+local function create_eligible_lookup(eligible_player_ids)
+    if eligible_player_ids == nil then
+        return nil
+    end
+
+    local lookup = {}
+    for _, player_id in ipairs(eligible_player_ids) do
+        require_positive_integer(player_id, "eligible_player_id")
+        lookup[player_id] = true
+    end
+
+    return lookup
+end
+
 function M.start(session_options)
     reset(session_options)
 end
@@ -194,6 +218,53 @@ function M.resolve_wave()
 
     is_resolved = true
     return true
+end
+
+function M.get_joint_defense_plan(eligible_player_ids)
+    if current_wave == 0 or is_resolved then
+        return {
+            wave = current_wave,
+            is_available = false,
+            defender_player_id = 0,
+            defenders = {},
+            leaking_players = {},
+        }
+    end
+
+    local eligible_lookup = create_eligible_lookup(eligible_player_ids)
+    local defenders = {}
+    local leaking_players = {}
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        if eligible_lookup == nil or eligible_lookup[player_id] then
+            local initial_count = calculate_player_counts(player_id)
+            local enemy_instance_ids = copy_leaked_enemy_ids(player_id)
+
+            if initial_count > 0 then
+                table.insert(leaking_players, {
+                    player_id = player_id,
+                    leak_count = initial_count,
+                    enemy_instance_ids = enemy_instance_ids,
+                })
+            else
+                table.insert(defenders, player_id)
+            end
+        end
+    end
+
+    local is_available = #defenders > 0 and #leaking_players > 0
+    local defender_player_id = 0
+    if is_available then
+        defender_player_id = defenders[1]
+    end
+
+    return {
+        wave = current_wave,
+        is_available = is_available,
+        defender_player_id = defender_player_id,
+        defenders = defenders,
+        leaking_players = leaking_players,
+    }
 end
 
 function M.get_snapshot()

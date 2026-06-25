@@ -1,0 +1,94 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &519898140677627681
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4962392219623007594}
+  - component: {fileID: 3577612880755980855}
+  m_Layer: 0
+  m_Name: GoldenGatherBurstVfx
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4962392219623007594
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 519898140677627681}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 0.2, y: 0.2, z: 0}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3577612880755980855
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 519898140677627681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5fb764047d174c0f8ae372acda9fd8ad, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  playOnEnable: 0
+  autoDestroy: 0
+  gatherDuration: 0.75
+  coreHoldDuration: 0.18
+  burstDuration: 0.55
+  gatherCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  gatherParticleCount: 72
+  gatherRadius: 1.65
+  gatherRadiusJitter: 0.35
+  gatherParticleSize: 0.08
+  coreMaxScale: 1.5
+  flashMaxScale: 2.1
+  burstParticleCount: 56
+  burstMinSpeed: 2.5
+  burstMaxSpeed: 5.2
+  burstParticleSize: 0.11
+  burstUpwardBias: 0
+  burstGravityModifier: 1
+  gatherColor: {r: 1, g: 0.72, b: 0.18, a: 0.92}
+  coreColor: {r: 1, g: 0.9, b: 0.38, a: 0.95}
+  burstColor: {r: 1, g: 0.63, b: 0.05, a: 0.95}
+  flashColor: {r: 1, g: 0.86, b: 0.25, a: 0.62}
+  sortingLayerName: Default
+  sortingOrder: 3000
+  tuningVersion: 1

@@ -23,6 +23,9 @@ namespace ProtectTree.Runtime.Board
         [Header("Highlight Materials")]
         [SerializeField] private Material selectedFillMaterial;
         [SerializeField] private Material selectedOutlineMaterial;
+        [SerializeField] private Material attackRangeFillMaterial;
+        [SerializeField] private Color attackRangeFillColor =
+            new Color(1f, 0.28f, 0.05f, 0.3f);
 
         [Header("Unit Prototype Material")]
         [SerializeField] private Material unitPreviewMaterial;
@@ -57,6 +60,8 @@ namespace ProtectTree.Runtime.Board
 
         public Material SelectedFillMaterial => selectedFillMaterial;
         public Material SelectedOutlineMaterial => selectedOutlineMaterial;
+        public Material AttackRangeFillMaterial => attackRangeFillMaterial;
+        public Color AttackRangeFillColor => attackRangeFillColor;
         public Material UnitPreviewMaterial => unitPreviewMaterial;
 
         public Color GroundTopColor => groundTopColor;

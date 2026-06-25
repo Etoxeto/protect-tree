@@ -10,6 +10,8 @@ local pending_events = {}    -- 保存尚未被消费的事件
 local alive_count = 0 -- 在途敌人数量，新建时加1，进入终点/死亡时减1
 
 
+local boss_awakened_waves = {}
+
 local function require_positive_integer(value, field_name)
     if type(value) ~= "number"
         or value <= 0
@@ -40,6 +42,61 @@ local function reset()
     enemies_by_id = {}
     ordered_enemy_ids = {}
     pending_events = {}
+    boss_awakened_waves = {}
+end
+
+local function find_boss(wave)
+    local boss = nil
+
+    for _, instance_id in ipairs(ordered_enemy_ids) do
+        local enemy = enemies_by_id[instance_id]
+        if enemy.wave == wave and enemy.is_boss then
+            if boss ~= nil then
+                error("Boss wave contains more than one boss: " .. wave)
+            end
+            boss = enemy
+        end
+    end
+
+    return boss
+end
+
+local function apply_enrage(enemy, enrage_config)
+    if enemy == nil or enemy.is_boss or enrage_config == nil then
+        return
+    end
+
+    enemy.is_enraged = true
+    enemy.path_speed = enemy.base_path_speed * enrage_config.speed_multiplier
+    enemy.attack_interval_seconds =
+        enemy.base_attack_interval_seconds / enrage_config.attack_speed_multiplier
+end
+
+local function awaken_boss_minions(
+    wave,
+    speed_multiplier,
+    attack_speed_multiplier
+)
+    boss_awakened_waves[wave] = {
+        speed_multiplier = speed_multiplier,
+        attack_speed_multiplier = attack_speed_multiplier,
+    }
+
+    for _, instance_id in ipairs(ordered_enemy_ids) do
+        local enemy = enemies_by_id[instance_id]
+        if enemy.wave == wave
+            and enemy.status == "Alive"
+            and not enemy.is_boss then
+            apply_enrage(enemy, boss_awakened_waves[wave])
+        end
+    end
+
+    table.insert(pending_events, {
+        type = "BossMinionsEnraged",
+        wave = wave,
+        speed_multiplier = speed_multiplier,
+        attack_speed_multiplier = attack_speed_multiplier,
+    })
 end
 
 function M.start()
@@ -74,6 +131,10 @@ local function handle_spawn_requested(event)
     if config.attack_type ~= "Melee" and config.attack_type ~= "Ranged" then
         error("Invalid attack_type: " .. tostring(config.attack_type))
     end
+    if config.attack_sfx_id ~= nil
+        and type(config.attack_sfx_id) ~= "string" then
+        error("Enemy attack_sfx_id must be a string: " .. event.enemy_id)
+    end
 
     local instance_id = next_instance_id
 
@@ -88,13 +149,22 @@ local function handle_spawn_requested(event)
         status = "Alive",
         attack_damage = config.attack_damage,
         attack_interval_seconds = config.attack_interval_seconds,
+        base_attack_interval_seconds = config.attack_interval_seconds,
         attack_type = config.attack_type,
+        attack_sfx_id = config.attack_sfx_id or "",
         is_boss = config.is_boss == true,
+        is_enraged = false,
         route_id = route_id,
         path_speed = config.path_speed,
+        base_path_speed = config.path_speed,
         path_progress = 0,
+        cast_seconds_remaining = 0,
         blocked_by_piece_instance_id = nil,
+        is_awaiting_transfer = false,
+        is_joint_defense_transfer = false,
+        leak_owner_player_id = nil,
     }
+    apply_enrage(enemy, boss_awakened_waves[event.wave])
     enemies_by_id[instance_id] = enemy
     table.insert(ordered_enemy_ids, instance_id)
 
@@ -105,7 +175,12 @@ local function handle_spawn_requested(event)
         spawn_index = event.spawn_index,
         enemy_instance_id = instance_id,
         target_player_id = enemy.target_player_id,
+        health = enemy.health,
+        max_health = enemy.max_health,
         is_boss = enemy.is_boss,
+        is_enraged = enemy.is_enraged,
+        route_id = enemy.route_id,
+        is_joint_defense_transfer = enemy.is_joint_defense_transfer,
     })
 
     alive_count = alive_count + 1
@@ -149,7 +224,10 @@ local function handle_damage_requested(event)
         source_piece_instance_id = event.source_piece_instance_id,
         damage = actual_damage,
         health = enemy.health,
+        max_health = enemy.max_health,
         is_boss = enemy.is_boss,
+        is_joint_defense_transfer = enemy.is_joint_defense_transfer,
+        leak_owner_player_id = enemy.leak_owner_player_id,
     })
 
     if enemy.health == 0 then
@@ -165,8 +243,128 @@ local function handle_damage_requested(event)
             target_player_id = enemy.target_player_id,
             source_piece_instance_id = event.source_piece_instance_id,
             health = enemy.health,
+            max_health = enemy.max_health,
             is_boss = enemy.is_boss,
+            is_joint_defense_transfer = enemy.is_joint_defense_transfer,
+            leak_owner_player_id = enemy.leak_owner_player_id,
         })
+    end
+end
+
+local function handle_joint_defense_transfer_requested(event)
+    require_positive_integer(event.wave, "wave")
+    require_positive_integer(event.enemy_instance_id, "enemy_instance_id")
+    require_positive_integer(event.defender_player_id, "defender_player_id")
+    require_positive_integer(event.leak_owner_player_id, "leak_owner_player_id")
+
+    local enemy = enemies_by_id[event.enemy_instance_id]
+
+    if enemy == nil then
+        error("Enemy not found: " .. tostring(event.enemy_instance_id))
+    end
+
+    if event.wave ~= enemy.wave then
+        error(
+            "Event wave does not match enemy wave: "
+            .. tostring(event.wave)
+        )
+    end
+
+    if enemy.is_boss then
+        error("Boss enemies cannot enter joint defense")
+    end
+
+    if enemy.status ~= "ReachedEndpoint" then
+        error(
+            "Only leaked enemies can enter joint defense: "
+            .. tostring(enemy.instance_id)
+        )
+    end
+
+    enemy.target_player_id = event.defender_player_id
+    enemy.leak_owner_player_id = event.leak_owner_player_id
+    enemy.is_joint_defense_transfer = true
+    enemy.status = "Alive"
+    enemy.path_progress = 0
+    enemy.blocked_by_piece_instance_id = nil
+    alive_count = alive_count + 1
+
+    table.insert(pending_events, {
+        type = "JointDefenseEnemyTransferred",
+        wave = enemy.wave,
+        enemy_id = enemy.enemy_id,
+        spawn_index = enemy.spawn_index,
+        enemy_instance_id = enemy.instance_id,
+        target_player_id = enemy.target_player_id,
+        leak_owner_player_id = enemy.leak_owner_player_id,
+        is_joint_defense_transfer = true,
+        is_boss = false,
+    })
+end
+
+local function handle_joint_defense_cleanup_requested(event)
+    require_positive_integer(event.wave, "wave")
+
+    for _, instance_id in ipairs(ordered_enemy_ids) do
+        local enemy = enemies_by_id[instance_id]
+
+        if enemy.wave == event.wave
+            and enemy.status == "Alive"
+            and enemy.is_joint_defense_transfer then
+            enemy.status = "ReachedEndpoint"
+            enemy.path_progress = 1
+            enemy.blocked_by_piece_instance_id = nil
+            alive_count = alive_count - 1
+
+            table.insert(pending_events, {
+                type = "JointDefenseEnemyEscaped",
+                wave = enemy.wave,
+                enemy_id = enemy.enemy_id,
+                spawn_index = enemy.spawn_index,
+                enemy_instance_id = enemy.instance_id,
+                target_player_id = enemy.target_player_id,
+                leak_owner_player_id = enemy.leak_owner_player_id,
+                is_joint_defense_transfer = true,
+                is_boss = false,
+            })
+        end
+    end
+end
+
+local function reach_endpoint(enemy, event_type)
+    enemy.status = "ReachedEndpoint"
+    enemy.path_progress = 1
+    enemy.blocked_by_piece_instance_id = nil
+    alive_count = alive_count - 1
+
+    table.insert(pending_events, {
+        type = event_type or "EnemyReachedEndpoint",
+        wave = enemy.wave,
+        enemy_id = enemy.enemy_id,
+        spawn_index = enemy.spawn_index,
+        enemy_instance_id = enemy.instance_id,
+        target_player_id = enemy.target_player_id,
+        health = enemy.health,
+        max_health = enemy.max_health,
+        is_boss = enemy.is_boss,
+        is_enraged = enemy.is_enraged,
+        route_id = enemy.route_id,
+        is_joint_defense_transfer = enemy.is_joint_defense_transfer,
+        leak_owner_player_id = enemy.leak_owner_player_id,
+    })
+end
+
+local function handle_combat_timeout_reached(event)
+    require_positive_integer(event.wave, "wave")
+
+    for _, instance_id in ipairs(ordered_enemy_ids) do
+        local enemy = enemies_by_id[instance_id]
+        if enemy.wave == event.wave
+            and enemy.status == "Alive"
+            and not enemy.is_boss
+            and enemy.is_joint_defense_transfer ~= true then
+            reach_endpoint(enemy)
+        end
     end
 end
 
@@ -213,6 +411,81 @@ local function handle_unblock_requested(event)
     })
 end
 
+local function handle_boss_retarget_requested(event)
+    require_positive_integer(event.wave, "wave")
+    require_positive_integer(event.target_player_id, "target_player_id")
+
+    local boss = find_boss(event.wave)
+    if boss == nil or boss.status ~= "Alive" then
+        return
+    end
+
+    -- Boss 被阻挡时不切换棋盘，避免留下不成对的阻挡/解除关系。
+    if boss.blocked_by_piece_instance_id ~= nil then
+        return
+    end
+
+    local route_id = event.route_id or boss.route_id
+    local path_progress = event.path_progress or boss.path_progress
+
+    if boss.target_player_id == event.target_player_id
+        and boss.route_id == route_id
+        and boss.path_progress == path_progress
+        and boss.is_awaiting_transfer ~= true then
+        return
+    end
+
+    local previous_target_player_id = boss.target_player_id
+    boss.target_player_id = event.target_player_id
+    boss.route_id = route_id
+    boss.path_progress = path_progress
+    boss.blocked_by_piece_instance_id = nil
+    boss.is_awaiting_transfer = false
+
+    table.insert(pending_events, {
+        type = "BossRetargeted",
+        wave = boss.wave,
+        enemy_id = boss.enemy_id,
+        enemy_instance_id = boss.instance_id,
+        previous_target_player_id = previous_target_player_id,
+        target_player_id = boss.target_player_id,
+        path_progress = boss.path_progress,
+        route_id = boss.route_id,
+        health = boss.health,
+        max_health = boss.max_health,
+        is_boss = true,
+    })
+end
+
+local function handle_boss_skill_cast(event)
+    require_positive_integer(event.enemy_instance_id, "enemy_instance_id")
+
+    local enemy = enemies_by_id[event.enemy_instance_id]
+    if enemy == nil or enemy.status ~= "Alive" or not enemy.is_boss then
+        return
+    end
+
+    local cast_lock_seconds = event.cast_lock_seconds or 0
+    require_non_negative_number(cast_lock_seconds, "cast_lock_seconds")
+    enemy.cast_seconds_remaining =
+        math.max(enemy.cast_seconds_remaining or 0, cast_lock_seconds)
+end
+
+local function handle_boss_minions_awakened(event)
+    require_positive_integer(event.wave, "wave")
+
+    local speed_multiplier = event.speed_multiplier or 2
+    local attack_speed_multiplier = event.attack_speed_multiplier or 2
+    require_positive_number(speed_multiplier, "speed_multiplier")
+    require_positive_number(attack_speed_multiplier, "attack_speed_multiplier")
+
+    awaken_boss_minions(
+        event.wave,
+        speed_multiplier,
+        attack_speed_multiplier
+    )
+end
+
 function M.handle_event(event)
     if event.type == "EnemySpawnRequested" then
         handle_spawn_requested(event)
@@ -231,6 +504,36 @@ function M.handle_event(event)
 
     if event.type == "EnemyUnblockRequested" then
         handle_unblock_requested(event)
+        return
+    end
+
+    if event.type == "JointDefenseEnemyTransferRequested" then
+        handle_joint_defense_transfer_requested(event)
+        return
+    end
+
+    if event.type == "BossRetargetRequested" then
+        handle_boss_retarget_requested(event)
+        return
+    end
+
+    if event.type == "BossSkillCast" then
+        handle_boss_skill_cast(event)
+        return
+    end
+
+    if event.type == "BossMinionsAwakened" then
+        handle_boss_minions_awakened(event)
+        return
+    end
+
+    if event.type == "CombatTimeoutReached" then
+        handle_combat_timeout_reached(event)
+        return
+    end
+
+    if event.type == "JointDefenseCleanupRequested" then
+        handle_joint_defense_cleanup_requested(event)
     end
 end
 
@@ -247,11 +550,17 @@ local function copy_enemy(enemy)
         attack_damage = enemy.attack_damage,
         attack_interval_seconds = enemy.attack_interval_seconds,
         attack_type = enemy.attack_type,
+        attack_sfx_id = enemy.attack_sfx_id,
         is_boss = enemy.is_boss,
+        is_enraged = enemy.is_enraged,
         route_id = enemy.route_id,
         path_speed = enemy.path_speed,
         path_progress = enemy.path_progress,
+        cast_seconds_remaining = enemy.cast_seconds_remaining or 0,
         blocked_by_piece_instance_id = enemy.blocked_by_piece_instance_id,
+        is_awaiting_transfer = enemy.is_awaiting_transfer,
+        is_joint_defense_transfer = enemy.is_joint_defense_transfer,
+        leak_owner_player_id = enemy.leak_owner_player_id,
     }
 end
 
@@ -274,31 +583,25 @@ function M.get_alive_count()
 end
 
 function M.get_boss_result(wave)
-    local boss = nil
-
-    for _, instance_id in ipairs(ordered_enemy_ids) do
-        local enemy = enemies_by_id[instance_id]
-        if enemy.wave == wave and enemy.is_boss then
-            if boss ~= nil then
-                error("Boss wave contains more than one boss: " .. wave)
-            end
-            boss = enemy
-        end
-    end
-
+    local boss = find_boss(wave)
     if boss == nil then
-        error("Boss not found for wave: " .. wave)
+        return nil
     end
 
     if boss.status == "Defeated" then
         return "Victory"
     end
 
-    if boss.status == "ReachedEndpoint" then
-        return "Defeat"
+    return nil
+end
+
+function M.get_boss_target_player_id(wave)
+    local boss = find_boss(wave)
+    if boss == nil or boss.status ~= "Alive" then
+        return nil
     end
 
-    return nil
+    return boss.target_player_id
 end
 
 function M.drain_events()
@@ -307,26 +610,70 @@ function M.drain_events()
     return events
 end
 
+local function handle_boss_route_completed(enemy)
+    local boss_routes = board.boss_routes or {}
+
+    if enemy.route_id == boss_routes.outbound_route_id
+        and boss_routes.return_route_id ~= nil then
+        enemy.route_id = boss_routes.return_route_id
+        enemy.path_progress = 0
+        enemy.blocked_by_piece_instance_id = nil
+
+        table.insert(pending_events, {
+            type = "BossRouteChanged",
+            wave = enemy.wave,
+            enemy_id = enemy.enemy_id,
+            enemy_instance_id = enemy.instance_id,
+            target_player_id = enemy.target_player_id,
+            route_id = enemy.route_id,
+            path_progress = enemy.path_progress,
+            health = enemy.health,
+            max_health = enemy.max_health,
+            is_boss = true,
+        })
+        return
+    end
+
+    enemy.path_progress = 1
+    enemy.blocked_by_piece_instance_id = nil
+    enemy.is_awaiting_transfer = true
+
+    table.insert(pending_events, {
+        type = "BossTransferRequested",
+        wave = enemy.wave,
+        enemy_id = enemy.enemy_id,
+        enemy_instance_id = enemy.instance_id,
+        target_player_id = enemy.target_player_id,
+        route_id = enemy.route_id,
+        path_progress = enemy.path_progress,
+        health = enemy.health,
+        max_health = enemy.max_health,
+        is_boss = true,
+        reason = "RouteCompleted",
+    })
+end
+
 function M.update(delta_time)
     for _, instance_id in ipairs(ordered_enemy_ids) do
         local enemy = enemies_by_id[instance_id]
-        -- 被阻挡的敌人仍属于存活状态，但解除阻挡前不再推进路线进度。
+        local is_casting = (enemy.cast_seconds_remaining or 0) > 0
+        if is_casting then
+            enemy.cast_seconds_remaining =
+                math.max(0, enemy.cast_seconds_remaining - delta_time)
+        end
+
+        -- 被阻挡或施法中的敌人仍存活，但本帧不推进路线进度。
         if enemy.status == "Alive"
-            and enemy.blocked_by_piece_instance_id == nil then
+            and enemy.blocked_by_piece_instance_id == nil
+            and enemy.is_awaiting_transfer ~= true
+            and not is_casting then
             enemy.path_progress = enemy.path_progress + enemy.path_speed * delta_time
             if enemy.path_progress >= 1 then
-                enemy.path_progress = 1
-                enemy.status = "ReachedEndpoint"
-                alive_count = alive_count - 1
-                table.insert(pending_events, {
-                    type = "EnemyReachedEndpoint",
-                    wave = enemy.wave,
-                    enemy_id = enemy.enemy_id,
-                    spawn_index = enemy.spawn_index,
-                    enemy_instance_id = enemy.instance_id,
-                    target_player_id = enemy.target_player_id,
-                    is_boss = enemy.is_boss,
-                })
+                if enemy.is_boss then
+                    handle_boss_route_completed(enemy)
+                else
+                    reach_endpoint(enemy)
+                end
             end
         end
     end

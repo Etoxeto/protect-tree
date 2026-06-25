@@ -1,13 +1,48 @@
+local enemy_configs = require("Config.Enemies")
+local board = require("Config.Board")
+
 local M = {}
+
+local RngModulus = 2147483647
+local RngMultiplier = 48271
+local DefaultBossSkillSeed = 20260624
+local DefaultAttackImpactDelaySeconds = 0.2
+local BossMagicShootingProjectileId = "BossMagicShooting"
+local BossMagicExplosionProjectileId = "BossMagicExplosion"
 
 local is_active = false
 local seconds_until_attack_by_enemy_id = {}
+local seconds_until_boss_skill_by_key = {}
+local rng_state = DefaultBossSkillSeed
+local pending_attack_impacts = {}
 local pending_events = {}
 
 local function reset()
     is_active = false
     seconds_until_attack_by_enemy_id = {}
+    seconds_until_boss_skill_by_key = {}
+    rng_state = DefaultBossSkillSeed
+    pending_attack_impacts = {}
     pending_events = {}
+end
+
+local function require_non_negative_number(value, field_name)
+    if type(value) ~= "number" or value < 0 then
+        error(
+            field_name
+            .. " must be a non-negative number: "
+            .. tostring(value)
+        )
+    end
+end
+
+local function random_index(max_value)
+    if max_value <= 0 then
+        error("max_value must be positive")
+    end
+
+    rng_state = (rng_state * RngMultiplier) % RngModulus
+    return (rng_state % max_value) + 1
 end
 
 local function get_active_piece(pieces_by_id, piece_instance_id)
@@ -18,6 +53,311 @@ local function get_active_piece(pieces_by_id, piece_instance_id)
     end
 
     return nil
+end
+
+local function get_active_board_pieces_for_player(piece_snapshot, player_id)
+    local pieces = {}
+
+    for _, piece in ipairs(piece_snapshot.pieces) do
+        if piece.owner_player_id == player_id
+            and piece.location == "Board"
+            and piece.status == "Active"
+            and piece.cell_id ~= nil then
+            table.insert(pieces, piece)
+        end
+    end
+
+    return pieces
+end
+
+local function get_nearest_route_sample(enemy)
+    local route = board.routes[enemy.route_id]
+    if route == nil then
+        return nil, nil
+    end
+
+    local nearest_sample = nil
+    local nearest_index = nil
+    local nearest_distance = nil
+
+    for index, sample in ipairs(route.samples) do
+        local distance = math.abs(sample.path_progress - enemy.path_progress)
+        if nearest_sample == nil or distance < nearest_distance then
+            nearest_sample = sample
+            nearest_index = index
+            nearest_distance = distance
+        end
+    end
+
+    return nearest_sample, nearest_index
+end
+
+local function get_boss_horizontal_facing(enemy)
+    local route = board.routes[enemy.route_id]
+    local sample, sample_index = get_nearest_route_sample(enemy)
+
+    if route == nil or sample == nil then
+        return "Left"
+    end
+
+    for index = sample_index + 1, #route.samples do
+        local next_sample = route.samples[index]
+        if next_sample.grid_x ~= sample.grid_x then
+            return next_sample.grid_x > sample.grid_x and "Right" or "Left"
+        end
+    end
+
+    for index = sample_index - 1, 1, -1 do
+        local previous_sample = route.samples[index]
+        if previous_sample.grid_x ~= sample.grid_x then
+            return sample.grid_x > previous_sample.grid_x and "Right" or "Left"
+        end
+    end
+
+    return "Left"
+end
+
+local function should_fire_skill(enemy, skill_id, skill_config, delta_time)
+    local key = enemy.instance_id .. ":" .. skill_id
+    local seconds_until_skill = seconds_until_boss_skill_by_key[key]
+
+    if seconds_until_skill == nil then
+        seconds_until_skill = skill_config.initial_delay_seconds
+            or skill_config.interval_seconds
+    end
+
+    seconds_until_skill = seconds_until_skill - delta_time
+    if seconds_until_skill > 0 then
+        seconds_until_boss_skill_by_key[key] = seconds_until_skill
+        return false
+    end
+
+    seconds_until_boss_skill_by_key[key] =
+        seconds_until_skill + skill_config.interval_seconds
+    return true
+end
+
+local function insert_boss_skill_cast(
+    enemy,
+    projectile_id,
+    target_piece,
+    cast_lock_seconds
+)
+    table.insert(pending_events, {
+        type = "BossSkillCast",
+        wave = enemy.wave,
+        enemy_id = enemy.enemy_id,
+        enemy_instance_id = enemy.instance_id,
+        source_enemy_instance_id = enemy.instance_id,
+        target_player_id = enemy.target_player_id,
+        piece_instance_id = target_piece ~= nil and target_piece.instance_id or nil,
+        projectile_id = projectile_id,
+        cast_lock_seconds = cast_lock_seconds or 0,
+        is_boss = true,
+    })
+end
+
+local function insert_piece_damage(enemy, piece, damage, projectile_id)
+    table.insert(pending_events, {
+        type = "PieceDamageRequested",
+        piece_instance_id = piece.instance_id,
+        source_enemy_instance_id = enemy.instance_id,
+        target_player_id = enemy.target_player_id,
+        damage = damage,
+        projectile_id = projectile_id,
+        is_boss = enemy.is_boss,
+    })
+end
+
+local function insert_enemy_attack_started(enemy, piece)
+    table.insert(pending_events, {
+        type = "EnemyAttackStarted",
+        wave = enemy.wave,
+        piece_instance_id = piece.instance_id,
+        source_enemy_instance_id = enemy.instance_id,
+        target_player_id = enemy.target_player_id,
+        is_boss = enemy.is_boss,
+    })
+end
+
+local function get_attack_impact_delay(enemy)
+    local config = enemy_configs[enemy.enemy_id] or {}
+    local delay = config.attack_impact_delay_seconds
+    if delay == nil then
+        return DefaultAttackImpactDelaySeconds
+    end
+
+    require_non_negative_number(delay, "attack_impact_delay_seconds")
+    return delay
+end
+
+local function schedule_attack_impact(enemy, piece)
+    insert_enemy_attack_started(enemy, piece)
+    table.insert(pending_attack_impacts, {
+        seconds_remaining = get_attack_impact_delay(enemy),
+        source_enemy_instance_id = enemy.instance_id,
+        target_piece_instance_id = piece.instance_id,
+        damage = enemy.attack_damage,
+    })
+end
+
+local function find_enemy(enemy_snapshot, enemy_instance_id)
+    for _, enemy in ipairs(enemy_snapshot.enemies) do
+        if enemy.instance_id == enemy_instance_id then
+            return enemy
+        end
+    end
+
+    return nil
+end
+
+local function can_resolve_attack_impact(enemy, piece)
+    return enemy ~= nil
+        and piece ~= nil
+        and enemy.status == "Alive"
+        and enemy.attack_type == "Melee"
+        and (enemy.cast_seconds_remaining or 0) <= 0
+        and enemy.blocked_by_piece_instance_id == piece.instance_id
+        and piece.location == "Board"
+        and piece.status == "Active"
+end
+
+local function update_pending_attack_impacts(
+    delta_time,
+    pieces_by_id,
+    enemy_snapshot
+)
+    local remaining_impacts = {}
+
+    for _, impact in ipairs(pending_attack_impacts) do
+        impact.seconds_remaining = impact.seconds_remaining - delta_time
+
+        if impact.seconds_remaining <= 0 then
+            local enemy =
+                find_enemy(enemy_snapshot, impact.source_enemy_instance_id)
+            local piece = pieces_by_id[impact.target_piece_instance_id]
+
+            if can_resolve_attack_impact(enemy, piece) then
+                insert_piece_damage(enemy, piece, impact.damage, nil)
+            end
+        else
+            table.insert(remaining_impacts, impact)
+        end
+    end
+
+    pending_attack_impacts = remaining_impacts
+end
+
+local function update_boss_shooting_skill(
+    enemy,
+    piece_snapshot,
+    skill_config,
+    delta_time
+)
+    if not should_fire_skill(enemy, "magic_shooting", skill_config, delta_time) then
+        return
+    end
+
+    local boss_sample = get_nearest_route_sample(enemy)
+    if boss_sample == nil then
+        return
+    end
+
+    local facing = get_boss_horizontal_facing(enemy)
+    local direction_x = facing == "Right" and 1 or -1
+    local targets = {}
+
+    for _, piece in ipairs(
+        get_active_board_pieces_for_player(piece_snapshot, enemy.target_player_id)
+    ) do
+        local cell = board.cells[piece.cell_id]
+        if cell ~= nil
+            and cell.grid_y == boss_sample.grid_y
+            and (cell.grid_x - boss_sample.grid_x) * direction_x > 0 then
+            table.insert(targets, piece)
+        end
+    end
+
+    table.sort(targets, function(left, right)
+        local left_cell = board.cells[left.cell_id]
+        local right_cell = board.cells[right.cell_id]
+        return math.abs(left_cell.grid_x - boss_sample.grid_x)
+            < math.abs(right_cell.grid_x - boss_sample.grid_x)
+    end)
+
+    insert_boss_skill_cast(
+        enemy,
+        BossMagicShootingProjectileId,
+        targets[1],
+        skill_config.cast_lock_seconds
+    )
+
+    for _, piece in ipairs(targets) do
+        insert_piece_damage(
+            enemy,
+            piece,
+            skill_config.damage,
+            BossMagicShootingProjectileId
+        )
+    end
+end
+
+local function update_boss_explosion_skill(
+    enemy,
+    piece_snapshot,
+    skill_config,
+    delta_time
+)
+    if not should_fire_skill(enemy, "magic_explosion", skill_config, delta_time) then
+        return
+    end
+
+    local targets =
+        get_active_board_pieces_for_player(piece_snapshot, enemy.target_player_id)
+    if #targets == 0 then
+        return
+    end
+
+    local target_piece = targets[random_index(#targets)]
+    insert_boss_skill_cast(
+        enemy,
+        BossMagicExplosionProjectileId,
+        target_piece,
+        skill_config.cast_lock_seconds
+    )
+    insert_piece_damage(
+        enemy,
+        target_piece,
+        skill_config.damage,
+        BossMagicExplosionProjectileId
+    )
+end
+
+local function update_boss_skills(enemy, piece_snapshot, delta_time)
+    local config = enemy_configs[enemy.enemy_id]
+    local skills = config ~= nil and config.boss_skills or nil
+
+    if skills == nil then
+        return
+    end
+
+    if skills.magic_shooting ~= nil then
+        update_boss_shooting_skill(
+            enemy,
+            piece_snapshot,
+            skills.magic_shooting,
+            delta_time
+        )
+    end
+
+    if skills.magic_explosion ~= nil then
+        update_boss_explosion_skill(
+            enemy,
+            piece_snapshot,
+            skills.magic_explosion,
+            delta_time
+        )
+    end
 end
 
 function M.start()
@@ -31,11 +371,15 @@ function M.begin_battle()
 
     is_active = true
     seconds_until_attack_by_enemy_id = {}
+    seconds_until_boss_skill_by_key = {}
+    pending_attack_impacts = {}
 end
 
 function M.end_battle()
     is_active = false
     seconds_until_attack_by_enemy_id = {}
+    seconds_until_boss_skill_by_key = {}
+    pending_attack_impacts = {}
 end
 
 function M.update(delta_time, piece_snapshot, enemy_snapshot)
@@ -48,14 +392,28 @@ function M.update(delta_time, piece_snapshot, enemy_snapshot)
         pieces_by_id[piece.instance_id] = piece
     end
 
+    update_pending_attack_impacts(delta_time, pieces_by_id, enemy_snapshot)
+
     for _, enemy in ipairs(enemy_snapshot.enemies) do
         local target_piece = get_active_piece(
             pieces_by_id,
             enemy.blocked_by_piece_instance_id
         )
 
-        -- 当前敌人均为近战：只有被地面棋子阻挡时才攻击该棋子。
+        local is_casting = (enemy.cast_seconds_remaining or 0) > 0
+
+        if enemy.status == "Alive"
+            and enemy.is_boss == true
+            and enemy.is_awaiting_transfer ~= true
+            and not is_casting then
+            update_boss_skills(enemy, piece_snapshot, delta_time)
+        end
+
+        -- Current regular enemies are melee: they attack only the ground piece
+        -- that is blocking them.
         if enemy.status ~= "Alive"
+            or is_casting
+            or enemy.is_awaiting_transfer == true
             or enemy.attack_type ~= "Melee"
             or target_piece == nil then
             seconds_until_attack_by_enemy_id[enemy.instance_id] = nil
@@ -65,12 +423,7 @@ function M.update(delta_time, piece_snapshot, enemy_snapshot)
             seconds_until_attack = seconds_until_attack - delta_time
 
             if seconds_until_attack <= 0 then
-                table.insert(pending_events, {
-                    type = "PieceDamageRequested",
-                    piece_instance_id = target_piece.instance_id,
-                    source_enemy_instance_id = enemy.instance_id,
-                    damage = enemy.attack_damage,
-                })
+                schedule_attack_impact(enemy, target_piece)
                 seconds_until_attack =
                     seconds_until_attack + enemy.attack_interval_seconds
             end

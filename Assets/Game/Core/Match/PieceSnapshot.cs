@@ -2,6 +2,19 @@ using System.Collections.Generic;
 
 namespace ProtectTree.Core.Match
 {
+    public sealed class PieceAttackRangeOffsetSnapshot
+    {
+        public PieceAttackRangeOffsetSnapshot(int forward, int right)
+        {
+            Forward = forward;
+            Right = right;
+        }
+
+        public int Forward { get; }
+
+        public int Right { get; }
+    }
+
     public sealed class PieceSnapshot
     {
         public PieceSnapshot(
@@ -27,14 +40,18 @@ namespace ProtectTree.Core.Match
             string displayName = null,
             string portrait = null,
             string classId = null,
+            string attackSfxId = null,
             int rarity = 1,
-            IReadOnlyList<ShopSynergySnapshot> synergies = null)
+            IReadOnlyList<ShopSynergySnapshot> synergies = null,
+            IReadOnlyList<PieceAttackRangeOffsetSnapshot> attackRange = null,
+            string featureDescription = null)
         {
             InstanceId = instanceId;
             PieceId = pieceId;
             DisplayName = displayName ?? pieceId;
             Portrait = portrait ?? string.Empty;
             ClassId = classId ?? string.Empty;
+            AttackSfxId = attackSfxId ?? string.Empty;
             Rarity = rarity;
             OwnerPlayerId = ownerPlayerId;
             Level = level;
@@ -54,6 +71,8 @@ namespace ProtectTree.Core.Match
             SellValue = sellValue;
             DeployableTerrains = deployableTerrains;
             Synergies = synergies ?? new List<ShopSynergySnapshot>();
+            AttackRange = attackRange ?? new List<PieceAttackRangeOffsetSnapshot>();
+            FeatureDescription = featureDescription ?? string.Empty;
         }
 
         public int InstanceId { get; }
@@ -65,6 +84,8 @@ namespace ProtectTree.Core.Match
         public string Portrait { get; }
 
         public string ClassId { get; }
+
+        public string AttackSfxId { get; }
 
         public int Rarity { get; }
 
@@ -103,5 +124,9 @@ namespace ProtectTree.Core.Match
         public IReadOnlyList<string> DeployableTerrains { get; }
 
         public IReadOnlyList<ShopSynergySnapshot> Synergies { get; }
+
+        public IReadOnlyList<PieceAttackRangeOffsetSnapshot> AttackRange { get; }
+
+        public string FeatureDescription { get; }
     }
 }

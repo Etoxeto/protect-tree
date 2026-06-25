@@ -1,10 +1,16 @@
 local flow_config = require("Config.MatchFlow")
+local wave_config = require("Config.Waves")
 
 local M = {}
 
 local phase_durations = {
     Preparation = flow_config.preparation_seconds,
+    Battle = flow_config.battle_defense_seconds,
+    JointDefenseIntro = flow_config.joint_defense_intro_seconds or 1.5,
+    JointDefense = flow_config.joint_defense_seconds
+        or flow_config.battle_defense_seconds,
     BossPreparation = flow_config.boss_preparation_seconds,
+    BossBattle = flow_config.boss_defense_seconds,
     Settlement = flow_config.settlement_seconds,
 }
 
@@ -23,12 +29,40 @@ local function require_positive_integer(value, field_name)
     end
 end
 
-local function validate_config()
-    require_positive_integer(flow_config.normal_wave_count, "normal_wave_count")
-    require_positive_integer(flow_config.boss_wave, "boss_wave")
+local function get_wave_schedule()
+    local schedule = wave_config.schedule or {}
+    local normal_wave_count =
+        schedule.normal_wave_count or flow_config.normal_wave_count
+    local boss_wave = schedule.boss_wave or flow_config.boss_wave
 
-    if flow_config.boss_wave ~= flow_config.normal_wave_count + 1 then
+    return normal_wave_count, boss_wave
+end
+
+local function has_wave_pool(wave)
+    if type(wave_config.wave_pools) == "table" then
+        return wave_config.wave_pools[wave] ~= nil
+    end
+
+    return wave_config[wave] ~= nil
+end
+
+local function validate_config()
+    local normal_wave_count, boss_wave = get_wave_schedule()
+    require_positive_integer(normal_wave_count, "normal_wave_count")
+    require_positive_integer(boss_wave, "boss_wave")
+
+    if boss_wave ~= normal_wave_count + 1 then
         error("boss_wave must immediately follow normal waves")
+    end
+
+    for wave = 1, normal_wave_count do
+        if not has_wave_pool(wave) then
+            error("Wave pool not found for normal wave: " .. tostring(wave))
+        end
+    end
+
+    if not has_wave_pool(boss_wave) then
+        error("Wave pool not found for boss wave: " .. tostring(boss_wave))
     end
 
     for phase, duration in pairs(phase_durations) do
@@ -60,7 +94,6 @@ local function enter_phase(phase, wave)
     current_phase = phase
     current_wave = wave or current_wave
     remaining_seconds = get_phase_duration(phase)
-    print("wave=" .. current_wave .. " phase=" .. current_phase)
     emit_phase_changed()
 end
 
@@ -71,11 +104,17 @@ local function enter_next_timed_phase()
     end
 
     if current_phase == "Settlement" then
-        if current_wave < flow_config.normal_wave_count then
+        local normal_wave_count, boss_wave = get_wave_schedule()
+        if current_wave < normal_wave_count then
             enter_phase("Preparation", current_wave + 1)
         else
-            enter_phase("BossPreparation", flow_config.boss_wave)
+            enter_phase("BossPreparation", boss_wave)
         end
+        return
+    end
+
+    if current_phase == "JointDefenseIntro" then
+        enter_phase("JointDefense")
         return
     end
 
@@ -101,22 +140,59 @@ function M.update(delta_time)
         return
     end
 
-    if current_phase == "Battle" or current_phase == "BossBattle" then
+    if current_phase == "Battle"
+        or current_phase == "JointDefense"
+        or current_phase == "BossBattle" then
+        remaining_seconds = math.max(0, remaining_seconds - delta_time)
         return
     end
 
     remaining_seconds = remaining_seconds - delta_time
 
     while remaining_seconds <= 0 and not is_finished
-        and current_phase ~= "Battle" and current_phase ~= "BossBattle" do
+        and current_phase ~= "Battle"
+        and current_phase ~= "JointDefense"
+        and current_phase ~= "BossBattle" do
         local overflow = -remaining_seconds
         enter_next_timed_phase()
         remaining_seconds = remaining_seconds - overflow
     end
 end
 
+function M.is_phase_timeout()
+    if not is_started or is_finished then
+        return false
+    end
+
+    if current_phase ~= "Battle"
+        and current_phase ~= "JointDefense"
+        and current_phase ~= "BossBattle" then
+        return false
+    end
+
+    return remaining_seconds <= 0
+end
+
 function M.complete_battle()
     if not is_started or is_finished or current_phase ~= "Battle" then
+        return false
+    end
+
+    enter_phase("Settlement")
+    return true
+end
+
+function M.begin_joint_defense()
+    if not is_started or is_finished or current_phase ~= "Battle" then
+        return false
+    end
+
+    enter_phase("JointDefenseIntro")
+    return true
+end
+
+function M.complete_joint_defense()
+    if not is_started or is_finished or current_phase ~= "JointDefense" then
         return false
     end
 
@@ -134,6 +210,16 @@ function M.complete_preparation()
     end
 
     enter_next_timed_phase()
+    return true
+end
+
+function M.debug_enter_boss_preparation()
+    if not is_started or is_finished or current_phase ~= "Preparation" then
+        return false
+    end
+
+    local _, boss_wave = get_wave_schedule()
+    enter_phase("BossPreparation", boss_wave)
     return true
 end
 

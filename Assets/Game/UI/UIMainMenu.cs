@@ -1,4 +1,5 @@
 using ProtectTree.Runtime;
+using ProtectTree.Runtime.Network;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
@@ -9,7 +10,7 @@ namespace ProtectTree.Runtime.Menu
     public sealed class UIMainMenu : MonoBehaviour
     {
         private const string MatchSceneName = "SampleScene";
-        private const int LocalPrototypePlayerCount = 2;
+        private const string LanLobbySceneName = "LanLobby";
 
         [FormerlySerializedAs("ButtonSingleGame")]
         [SerializeField] private Button buttonSingleGame;
@@ -26,36 +27,65 @@ namespace ProtectTree.Runtime.Menu
         [FormerlySerializedAs("ButtonSetting")]
         [SerializeField] private Button buttonSetting;
 
+        [SerializeField] private UISettingPanel settingPanel;
+
         private void Awake()
         {
+            LanMatchRuntime.ClearActiveSession();
+
             if (buttonSingleGame == null)
             {
                 Debug.LogError("Single-player button is not assigned.", this);
                 return;
             }
 
+            buttonSingleGame.onClick.AddListener(PlayButtonSound);
             buttonSingleGame.onClick.AddListener(EnterSinglePlayerMode);
-            buttonLanGame?.onClick.AddListener(EnterLocalMultiplayerPrototype);
+            buttonLanGame?.onClick.AddListener(PlayButtonSound);
+            buttonLanGame?.onClick.AddListener(EnterLanLobby);
+            buttonInternetGame?.onClick.AddListener(PlayButtonSound);
+            buttonGallery?.onClick.AddListener(PlayButtonSound);
+            buttonSetting?.onClick.AddListener(PlayButtonSound);
+            buttonSetting?.onClick.AddListener(OpenSettingPanel);
+            settingPanel?.Hide();
+            AudioManager.PlayBgm("bgm_normal");
         }
 
         private void OnDestroy()
         {
+            buttonSingleGame?.onClick.RemoveListener(PlayButtonSound);
             buttonSingleGame?.onClick.RemoveListener(EnterSinglePlayerMode);
-            buttonLanGame?.onClick.RemoveListener(EnterLocalMultiplayerPrototype);
+            buttonLanGame?.onClick.RemoveListener(PlayButtonSound);
+            buttonLanGame?.onClick.RemoveListener(EnterLanLobby);
+            buttonInternetGame?.onClick.RemoveListener(PlayButtonSound);
+            buttonGallery?.onClick.RemoveListener(PlayButtonSound);
+            buttonSetting?.onClick.RemoveListener(PlayButtonSound);
+            buttonSetting?.onClick.RemoveListener(OpenSettingPanel);
         }
 
         private void EnterSinglePlayerMode()
         {
+            LanMatchRuntime.ClearActiveSession();
             MatchStartupOptions.UseSinglePlayer();
             SetMenuButtonsInteractable(false);
             SceneManager.LoadScene(MatchSceneName, LoadSceneMode.Single);
         }
 
-        private void EnterLocalMultiplayerPrototype()
+        private void EnterLanLobby()
         {
-            MatchStartupOptions.UseLocalMultiplayer(LocalPrototypePlayerCount);
+            LanMatchRuntime.ClearActiveSession();
             SetMenuButtonsInteractable(false);
-            SceneManager.LoadScene(MatchSceneName, LoadSceneMode.Single);
+            SceneManager.LoadScene(LanLobbySceneName, LoadSceneMode.Single);
+        }
+
+        private void OpenSettingPanel()
+        {
+            settingPanel?.Show();
+        }
+
+        private static void PlayButtonSound()
+        {
+            AudioManager.PlayButtonClick();
         }
 
         private void SetMenuButtonsInteractable(bool isInteractable)

@@ -48,6 +48,8 @@ namespace ProtectTree.Editor
         [MenuItem("Protect Tree/Build Windows Player")]
         public static void Build()
         {
+            ConfigureWindowedPlayerSettings();
+
             string[] scenes = EditorBuildSettings.scenes
                 .Where(scene => scene.enabled)
                 .Select(scene => scene.path)
@@ -76,6 +78,18 @@ namespace ProtectTree.Editor
             }
 
             Debug.Log($"[ProtectTree][Build] Windows Player: {report.summary.outputPath}");
+        }
+
+        private static void ConfigureWindowedPlayerSettings()
+        {
+            // 联机调试通常需要双开客户端，默认窗口化比全屏更容易观察和操作。
+            PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
+            PlayerSettings.defaultScreenWidth = 1280;
+            PlayerSettings.defaultScreenHeight = 720;
+            PlayerSettings.resizableWindow = true;
+            PlayerSettings.allowFullscreenSwitch = true;
+            PlayerSettings.visibleInBackground = true;
+            PlayerSettings.runInBackground = true;
         }
     }
 

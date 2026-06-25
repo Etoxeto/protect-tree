@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 16e62d8ffd9f63e448eeab0ab87f3065, type: 3}
+  m_Name: DefaultProjectileCatalog
+  m_EditorClassIdentifier:
+  pieceProjectileEntries:
+  - pieceId: golden_archer
+    projectilePrefab: {fileID: 2096232724275707270, guid: 15251a3baa9fe25418a6f26ffa321df4, type: 3}
+    fireDelaySeconds: 0.12
+    speed: 30
+    impactHoldSeconds: 0.05
+    rotateToVelocity: 1
+    baseScale: 1
+    layersPerScaleStep: 20
+    scalePerLayerStep: 0
+  - pieceId: magician_01
+    projectilePrefab: {fileID: 3985839281379126801, guid: 8e742c6a12a86fe409e5b042b6bc6449, type: 3}
+    fireDelaySeconds: 0.12
+    speed: 20
+    impactHoldSeconds: 0
+    rotateToVelocity: 0
+    baseScale: 1
+    layersPerScaleStep: 20
+    scalePerLayerStep: 0
+  - pieceId: Storm
+    projectilePrefab: {fileID: 2316720981444623422, guid: 4e17c50c3ace8f84eb23578b01fc09fe, type: 3}
+    fireDelaySeconds: 0.05
+    speed: 16
+    impactHoldSeconds: 0.05
+    rotateToVelocity: 0
+    baseScale: 1
+    layersPerScaleStep: 20
+    scalePerLayerStep: 0.1
+  - pieceId: MagicPower
+    projectilePrefab: {fileID: 6999634868330562678, guid: 784cbd8058fcb8f48b4a77bd9087ff60, type: 3}
+    fireDelaySeconds: 0.05
+    speed: 20
+    impactHoldSeconds: 0
+    rotateToVelocity: 1
+    baseScale: 1
+    layersPerScaleStep: 20
+    scalePerLayerStep: 0.1

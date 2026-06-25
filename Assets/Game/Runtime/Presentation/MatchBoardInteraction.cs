@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ProtectTree.Core.Match;
+using ProtectTree.Core.Network;
 using ProtectTree.Runtime.Board;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -13,18 +14,24 @@ namespace ProtectTree.Runtime.Presentation
     public sealed class MatchBoardInteraction
     {
         private const float DragStartThresholdPixels = 8f;
+        private const float FacingPickExpansionWorld = 0.45f;
 
         private int _pressedPieceInstanceId;
         private Vector2 _pressScreenPosition;
         private int _draggingPieceInstanceId;
         private int _pendingPieceInstanceId;
+        private int _pendingSwapPieceInstanceId;
         private BoardVisualCell _pendingCell;
+        private BoardVisualCell _pendingSwapCell;
         private string _pendingFacing;
         private bool _isChoosingFacing;
         private readonly List<RaycastResult> _uiRaycastResults =
             new List<RaycastResult>();
         private readonly List<BoardVisualCell> _legalPlacementCells =
             new List<BoardVisualCell>();
+        private readonly List<BoardVisualCell> _attackRangeCells =
+            new List<BoardVisualCell>();
+        private readonly HashSet<int> _attackRangeCellIds = new HashSet<int>();
 
         public void Update(
             MatchSceneContext context,
@@ -81,6 +88,7 @@ namespace ProtectTree.Runtime.Presentation
             {
                 UpdateFacingConfirmation(
                     context,
+                    picker,
                     projector,
                     pieceView,
                     highlightView);
@@ -97,11 +105,14 @@ namespace ProtectTree.Runtime.Presentation
             _pressedPieceInstanceId = 0;
             _draggingPieceInstanceId = 0;
             _pendingPieceInstanceId = 0;
+            _pendingSwapPieceInstanceId = 0;
             _pendingCell = null;
+            _pendingSwapCell = null;
             _pendingFacing = null;
             _isChoosingFacing = false;
             highlightView?.SetVisible(false);
             highlightView?.ClearPlacementCells();
+            highlightView?.ClearAttackRangeCells();
         }
 
         private bool IsPieceInspectBlocked =>
@@ -120,22 +131,34 @@ namespace ProtectTree.Runtime.Presentation
             BoardPieceView pieceView,
             BoardCellHighlightView highlightView)
         {
-            Reset(highlightView);
+            if (IsPieceInspectBlocked)
+            {
+                Reset(highlightView);
+            }
+            else
+            {
+                highlightView.SetVisible(false);
+                highlightView.ClearPlacementCells();
+            }
 
             if (!Input.GetMouseButtonDown(0))
             {
+                ShowSelectedPieceAttackRange(context, picker, highlightView);
                 return;
             }
 
+            highlightView.ClearAttackRangeCells();
+
             if (IsPointerOverUi())
             {
-                context.SelectPiece(0);
+                context.ClearPieceSelection();
                 return;
             }
 
             if (TryPickPiece(pieceView, out int clickedPieceInstanceId))
             {
                 context.SelectPiece(clickedPieceInstanceId);
+                ShowSelectedPieceAttackRange(context, picker, highlightView);
                 return;
             }
 
@@ -158,8 +181,9 @@ namespace ProtectTree.Runtime.Presentation
             {
                 if (IsPointerOverUi())
                 {
-                    context.SelectPiece(0);
+                    context.ClearPieceSelection();
                     highlightView.SetVisible(false);
+                    highlightView.ClearAttackRangeCells();
                     return;
                 }
 
@@ -175,6 +199,7 @@ namespace ProtectTree.Runtime.Presentation
                 {
                     context.SelectPiece(0);
                     highlightView.SetVisible(false);
+                    highlightView.ClearAttackRangeCells();
                     return;
                 }
 
@@ -190,6 +215,7 @@ namespace ProtectTree.Runtime.Presentation
                 {
                     context.SelectPiece(0);
                     highlightView.Show(clickedCell);
+                    highlightView.ClearAttackRangeCells();
                     Debug.Log(
                         $"Selected authority board cell {clickedCell.CellId}: "
                         + $"visual=({clickedCell.X}, {clickedCell.Y}), "
@@ -207,12 +233,15 @@ namespace ProtectTree.Runtime.Presentation
                 {
                     context.SelectPiece(_pressedPieceInstanceId);
                     _pressedPieceInstanceId = 0;
+                    ShowSelectedPieceAttackRange(context, picker, highlightView);
                     return;
                 }
 
                 Vector2 dragDelta = (Vector2)Input.mousePosition - _pressScreenPosition;
                 if (dragDelta.magnitude < DragStartThresholdPixels)
                 {
+                    highlightView.SetVisible(false);
+                    highlightView.ClearAttackRangeCells();
                     return;
                 }
 
@@ -232,6 +261,7 @@ namespace ProtectTree.Runtime.Presentation
 
             if (_draggingPieceInstanceId == 0)
             {
+                ShowSelectedPieceAttackRange(context, picker, highlightView);
                 return;
             }
 
@@ -259,10 +289,17 @@ namespace ProtectTree.Runtime.Presentation
             if (hasValidTarget)
             {
                 highlightView.Show(targetCell);
+                ShowPieceAttackRangeAtCell(
+                    draggingPiece,
+                    targetCell,
+                    draggingPiece.Facing,
+                    picker,
+                    highlightView);
             }
             else
             {
                 highlightView.SetVisible(false);
+                highlightView.ClearAttackRangeCells();
             }
 
             if (!Input.GetMouseButtonUp(0))
@@ -303,14 +340,42 @@ namespace ProtectTree.Runtime.Presentation
                 targetCell,
                 draggingPiece.Facing);
             _pendingPieceInstanceId = draggingPiece.InstanceId;
+            _pendingSwapPieceInstanceId = 0;
             _pendingCell = targetCell;
+            _pendingSwapCell = null;
             _pendingFacing = draggingPiece.Facing;
+            PieceSnapshot swapPiece = FindPieceAtCell(
+                context.Pieces,
+                context.LocalPlayerId,
+                targetCell.CellId);
+            if (swapPiece != null
+                && swapPiece.InstanceId != draggingPiece.InstanceId
+                && draggingPiece.CellId.HasValue)
+            {
+                _pendingSwapPieceInstanceId = swapPiece.InstanceId;
+                _pendingSwapCell = FindCellById(picker, draggingPiece.CellId.Value);
+                if (_pendingSwapCell != null)
+                {
+                    pieceView.PreviewPiece(
+                        swapPiece.InstanceId,
+                        _pendingSwapCell,
+                        swapPiece.Facing);
+                }
+            }
+
             highlightView.ClearPlacementCells();
             highlightView.Show(targetCell);
+            ShowPieceAttackRangeAtCell(
+                draggingPiece,
+                targetCell,
+                draggingPiece.Facing,
+                picker,
+                highlightView);
         }
 
         private void UpdateFacingConfirmation(
             MatchSceneContext context,
+            BoardCellPicker picker,
             BoardPerspectiveProjector projector,
             BoardPieceView pieceView,
             BoardCellHighlightView highlightView)
@@ -324,13 +389,33 @@ namespace ProtectTree.Runtime.Presentation
             }
 
             pieceView.PreviewPiece(piece.InstanceId, _pendingCell, _pendingFacing);
+            if (_pendingSwapPieceInstanceId != 0 && _pendingSwapCell != null)
+            {
+                PieceSnapshot swapPiece =
+                    FindPiece(context.Pieces, _pendingSwapPieceInstanceId);
+                if (swapPiece != null)
+                {
+                    pieceView.PreviewPiece(
+                        swapPiece.InstanceId,
+                        _pendingSwapCell,
+                        swapPiece.Facing);
+                }
+            }
+
             highlightView.Show(_pendingCell);
+            ShowPieceAttackRangeAtCell(
+                piece,
+                _pendingCell,
+                _pendingFacing,
+                picker,
+                highlightView);
 
             if (Input.GetMouseButtonDown(0))
             {
                 _isChoosingFacing =
-                    TryPickPiece(pieceView, out int clickedPieceInstanceId)
-                    && clickedPieceInstanceId == _pendingPieceInstanceId;
+                    TryPickPieceWithExpandedBounds(
+                        pieceView,
+                        _pendingPieceInstanceId);
 
                 if (!_isChoosingFacing)
                 {
@@ -343,6 +428,12 @@ namespace ProtectTree.Runtime.Presentation
             {
                 _pendingFacing = CalculateFacing(projector, _pendingCell, _pendingFacing);
                 pieceView.PreviewPiece(piece.InstanceId, _pendingCell, _pendingFacing);
+                ShowPieceAttackRangeAtCell(
+                    piece,
+                    _pendingCell,
+                    _pendingFacing,
+                    picker,
+                    highlightView);
             }
 
             if (!_isChoosingFacing || !Input.GetMouseButtonUp(0))
@@ -364,13 +455,25 @@ namespace ProtectTree.Runtime.Presentation
             PieceSnapshot piece,
             BoardVisualCell targetCell)
         {
-            if (piece.CellId == targetCell.CellId
-                || FindPieceAtCell(
-                    context.Pieces,
-                    context.LocalPlayerId,
-                    targetCell.CellId) != null)
+            if (piece.CellId == targetCell.CellId)
             {
-                return false;
+                return piece.Location == "Board"
+                    && targetCell.AllowsBattleDeployment
+                    && !targetCell.AcceptsReservePiece
+                    && CanDeployOnTerrain(piece, targetCell.Terrain.ToString());
+            }
+
+            PieceSnapshot occupyingPiece = FindPieceAtCell(
+                context.Pieces,
+                context.LocalPlayerId,
+                targetCell.CellId);
+            if (occupyingPiece != null)
+            {
+                return CanSwapWithOccupyingPiece(
+                    context,
+                    piece,
+                    occupyingPiece,
+                    targetCell);
             }
 
             if (targetCell.AcceptsReservePiece)
@@ -402,6 +505,37 @@ namespace ProtectTree.Runtime.Presentation
                 && playerCapacity.BoardCount < playerCapacity.DeploymentLimit;
         }
 
+        private static bool CanSwapWithOccupyingPiece(
+            MatchSceneContext context,
+            PieceSnapshot draggingPiece,
+            PieceSnapshot occupyingPiece,
+            BoardVisualCell targetCell)
+        {
+            if (draggingPiece == null
+                || occupyingPiece == null
+                || targetCell == null
+                || draggingPiece.InstanceId == occupyingPiece.InstanceId
+                || !draggingPiece.CellId.HasValue
+                || occupyingPiece.OwnerPlayerId != context.LocalPlayerId
+                || occupyingPiece.Location != "Board"
+                || targetCell.AcceptsReservePiece
+                || !targetCell.AllowsBattleDeployment
+                || !CanDeployOnTerrain(
+                    draggingPiece,
+                    targetCell.Terrain.ToString()))
+            {
+                return false;
+            }
+
+            if (draggingPiece.Location == "Board"
+                && !CanDeployOnTerrain(occupyingPiece, draggingPiece.Terrain))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         private void ShowPlacementHighlights(
             MatchSceneContext context,
             PieceSnapshot piece,
@@ -419,6 +553,163 @@ namespace ProtectTree.Runtime.Presentation
             }
 
             highlightView.ShowPlacementCells(_legalPlacementCells);
+        }
+
+        private void ShowSelectedPieceAttackRange(
+            MatchSceneContext context,
+            BoardCellPicker picker,
+            BoardCellHighlightView highlightView)
+        {
+            if (context.SelectedPieceInstanceId <= 0)
+            {
+                highlightView.ClearAttackRangeCells();
+                return;
+            }
+
+            PieceSnapshot selectedPiece =
+                FindPiece(context.Pieces, context.SelectedPieceInstanceId);
+            if (selectedPiece == null
+                || selectedPiece.OwnerPlayerId != context.LocalPlayerId
+                || selectedPiece.Location != "Board"
+                || !selectedPiece.CellId.HasValue)
+            {
+                highlightView.ClearAttackRangeCells();
+                return;
+            }
+
+            BoardVisualCell cell = FindCellById(picker, selectedPiece.CellId.Value);
+            ShowPieceAttackRangeAtCell(
+                selectedPiece,
+                cell,
+                selectedPiece.Facing,
+                picker,
+                highlightView);
+        }
+
+        private void ShowPieceAttackRangeAtCell(
+            PieceSnapshot piece,
+            BoardVisualCell originCell,
+            string facing,
+            BoardCellPicker picker,
+            BoardCellHighlightView highlightView)
+        {
+            if (piece == null
+                || originCell == null
+                || originCell.AcceptsReservePiece
+                || !TryGetFacingBasis(
+                    facing,
+                    out Vector2Int forward,
+                    out Vector2Int right))
+            {
+                highlightView.ClearAttackRangeCells();
+                return;
+            }
+
+            _attackRangeCells.Clear();
+            _attackRangeCellIds.Clear();
+
+            IReadOnlyList<BoardVisualCell> cells =
+                picker != null ? picker.Cells : null;
+            foreach (PieceAttackRangeOffsetSnapshot offset in piece.AttackRange)
+            {
+                int targetX =
+                    originCell.X
+                    + forward.x * offset.Forward
+                    + right.x * offset.Right;
+                int targetY =
+                    originCell.Y
+                    + forward.y * offset.Forward
+                    + right.y * offset.Right;
+                BoardVisualCell targetCell =
+                    FindCellByCoord(cells, targetX, targetY);
+                if (targetCell == null
+                    || !_attackRangeCellIds.Add(targetCell.CellId))
+                {
+                    continue;
+                }
+
+                _attackRangeCells.Add(targetCell);
+            }
+
+            highlightView.ShowAttackRangeCells(_attackRangeCells);
+        }
+
+        private static bool TryGetFacingBasis(
+            string facing,
+            out Vector2Int forward,
+            out Vector2Int right)
+        {
+            switch (facing)
+            {
+                case "Up":
+                    forward = new Vector2Int(0, 1);
+                    break;
+                case "Right":
+                    forward = new Vector2Int(1, 0);
+                    break;
+                case "Down":
+                    forward = new Vector2Int(0, -1);
+                    break;
+                case "Left":
+                    forward = new Vector2Int(-1, 0);
+                    break;
+                default:
+                    forward = Vector2Int.zero;
+                    right = Vector2Int.zero;
+                    return false;
+            }
+
+            // 与 Lua 的 BoardQueries 保持一致：attack_range 使用“前方/右方”相对坐标。
+            right = new Vector2Int(forward.y, -forward.x);
+            return true;
+        }
+
+        private static BoardVisualCell FindCellById(
+            BoardCellPicker picker,
+            int cellId)
+        {
+            return FindCellById(picker?.Cells, cellId);
+        }
+
+        private static BoardVisualCell FindCellById(
+            IReadOnlyList<BoardVisualCell> cells,
+            int cellId)
+        {
+            if (cells == null)
+            {
+                return null;
+            }
+
+            foreach (BoardVisualCell cell in cells)
+            {
+                if (cell.CellId == cellId)
+                {
+                    return cell;
+                }
+            }
+
+            return null;
+        }
+
+        private static BoardVisualCell FindCellByCoord(
+            IReadOnlyList<BoardVisualCell> cells,
+            int x,
+            int y)
+        {
+            if (cells == null)
+            {
+                return null;
+            }
+
+            foreach (BoardVisualCell cell in cells)
+            {
+                if (cell.X == x && cell.Y == y)
+                {
+                    return cell;
+                }
+            }
+
+            return null;
         }
 
         private static bool CanDeployOnTerrain(PieceSnapshot piece, string terrain)
@@ -480,6 +771,14 @@ namespace ProtectTree.Runtime.Presentation
             int cellId,
             string facing)
         {
+            if (TrySendClientCommand(
+                context,
+                MatchCommand.PlacePiece(pieceInstanceId, cellId, facing)))
+            {
+                context.SelectPiece(0);
+                return;
+            }
+
             try
             {
                 context.Runtime.PlacePiece(
@@ -501,6 +800,14 @@ namespace ProtectTree.Runtime.Presentation
             MatchSceneContext context,
             int pieceInstanceId)
         {
+            if (TrySendClientCommand(
+                context,
+                MatchCommand.SellPiece(pieceInstanceId)))
+            {
+                context.SelectPiece(0);
+                return;
+            }
+
             try
             {
                 context.Runtime.SellPiece(context.LocalPlayerId, pieceInstanceId);
@@ -511,6 +818,27 @@ namespace ProtectTree.Runtime.Presentation
                 Debug.LogWarning(
                     $"Piece sale was rejected by authority: {exception.Message}");
             }
+        }
+
+        private static bool TrySendClientCommand(
+            MatchSceneContext context,
+            MatchCommand command)
+        {
+            if (context.LanMatch == null
+                || !context.LanMatch.IsActive
+                || !context.LanMatch.IsClient)
+            {
+                return false;
+            }
+
+            if (!context.LanMatch.TrySendCommand(command))
+            {
+                Debug.LogWarning(
+                    $"Piece command {command.Type} was not sent; waiting for LAN match transport.");
+            }
+
+            // LAN 客户端只提交棋子操作意图，实际位置/出售结果等待 Host 快照确认。
+            return true;
         }
 
         private bool TryFindSellDropZone(
@@ -640,6 +968,31 @@ namespace ProtectTree.Runtime.Presentation
 
             Vector3 world = camera.ScreenToWorldPoint(Input.mousePosition);
             return pieceView.TryPickPiece(world, out pieceInstanceId);
+        }
+
+        private static bool TryPickPieceWithExpandedBounds(
+            BoardPieceView pieceView,
+            int expectedPieceInstanceId)
+        {
+            if (TryPickPiece(pieceView, out int pieceInstanceId)
+                && pieceInstanceId == expectedPieceInstanceId)
+            {
+                return true;
+            }
+
+            Camera camera = Camera.main;
+            if (camera == null
+                || !pieceView.TryGetPieceWorldBounds(
+                    expectedPieceInstanceId,
+                    out Bounds bounds))
+            {
+                return false;
+            }
+
+            bounds.Expand(FacingPickExpansionWorld * 2f);
+            Vector3 world = camera.ScreenToWorldPoint(Input.mousePosition);
+            world.z = bounds.center.z;
+            return bounds.Contains(world);
         }
 
         private static PieceSnapshot FindPiece(

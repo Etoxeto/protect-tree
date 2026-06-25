@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!221 &22100000
+AnimatorOverrideController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: AC_RongluSwordOverride
+  m_Controller: {fileID: 9100000, guid: 2b8a46cf88b1b26428adadb4cd76d305, type: 2}
+  m_Clips:
+  - m_OriginalClip: {fileID: 7400000, guid: 5976fc8f47da4494e9b1aa599fb752a2, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 5438f1cf5dbbc2e468d727c7be994410, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 8371751097a97f346b801904a36cf126, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: ad18a1a456b066148b7ee6c60daa4d7c, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 2f876d0c604fb834390afeeadf6011b3, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 73872af13431b7e4cb97ac3ee6131851, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: d5e9256407952be4b8b497bc85cd0f5f, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 35448f17f44af89468341eb77490496f, type: 2}

@@ -144,7 +144,49 @@ local function validate_route_sample(
     end
 end
 
+local function require_positive_integer(value, field_name)
+    if type(value) ~= "number" or value <= 0 or value % 1 ~= 0 then
+        error(field_name .. " must be a positive integer: " .. tostring(value))
+    end
+end
+
+local function create_boss_route_lookup(board)
+    local boss_route_ids = {}
+    local boss_routes = board.boss_routes
+    if boss_routes == nil then
+        return boss_route_ids
+    end
+
+    if type(boss_routes) ~= "table" then
+        error("boss_routes must be a table")
+    end
+
+    require_positive_integer(
+        boss_routes.outbound_route_id,
+        "boss_routes.outbound_route_id"
+    )
+    require_positive_integer(
+        boss_routes.return_route_id,
+        "boss_routes.return_route_id"
+    )
+
+    boss_route_ids[boss_routes.outbound_route_id] = true
+    boss_route_ids[boss_routes.return_route_id] = true
+    return boss_route_ids
+end
+
+local function validate_boss_route_references(board, boss_route_ids)
+    for route_id, _ in pairs(boss_route_ids) do
+        if board.routes[route_id] == nil then
+            error("Boss route does not exist: " .. tostring(route_id))
+        end
+    end
+end
+
 local function validate_routes(board)
+    local boss_route_ids = create_boss_route_lookup(board)
+    validate_boss_route_references(board, boss_route_ids)
+
     for route_id, route in pairs(board.routes) do
         if type(route_id) ~= "number" or route_id <= 0 or route_id % 1 ~= 0 then
             error("Route ID must be a positive integer: " .. tostring(route_id))
@@ -162,12 +204,15 @@ local function validate_routes(board)
             error("Route last sample must match endpoint_progress: " .. route_id)
         end
 
-        if board.cells[route.samples[1].cell_id].zone ~= "Spawn" then
-            error("Route must begin at a Spawn cell: " .. route_id)
-        end
+        if not boss_route_ids[route_id] then
+            if board.cells[route.samples[1].cell_id].zone ~= "Spawn" then
+                error("Route must begin at a Spawn cell: " .. route_id)
+            end
 
-        if board.cells[route.samples[#route.samples].cell_id].zone ~= "Endpoint" then
-            error("Route must end at an Endpoint cell: " .. route_id)
+            if board.cells[route.samples[#route.samples].cell_id].zone
+                ~= "Endpoint" then
+                error("Route must end at an Endpoint cell: " .. route_id)
+            end
         end
 
         local previous_progress = -math.huge

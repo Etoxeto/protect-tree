@@ -7,5 +7,6 @@ namespace ProtectTree.Core.Network
         WrongMatch = 2,
         StaleSequence = 3,
         OlderSimulationTick = 4,
+        WrongRecipient = 5,
     }
 }

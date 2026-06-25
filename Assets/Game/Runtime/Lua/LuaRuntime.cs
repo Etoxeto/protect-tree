@@ -189,6 +189,23 @@ namespace ProtectTree.Runtime.Lua
             return Convert.ToInt32(results[0]);
         }
 
+        public bool DebugEnterBossPreparation()
+        {
+            if (!IsStarted)
+            {
+                throw new InvalidOperationException("The Lua runtime has not started.");
+            }
+
+            object[] results = CallEntryFunction("debug_enter_boss_preparation");
+            if (results.Length != 1)
+            {
+                throw new InvalidOperationException(
+                    "Lua function debug_enter_boss_preparation must return one state.");
+            }
+
+            return Convert.ToBoolean(results[0]);
+        }
+
         public void DeployPiece(int playerId, int pieceInstanceId, int cellId)
         {
             if (!IsStarted)
@@ -619,7 +636,9 @@ namespace ProtectTree.Runtime.Lua
                                 enemyTable.Get<int>("attack_damage"),
                                 enemyTable.Get<double>("attack_interval_seconds"),
                                 enemyTable.Get<string>("attack_type"),
+                                GetOptionalString(enemyTable, "attack_sfx_id"),
                                 enemyTable.Get<bool>("is_boss"),
+                                GetOptionalBool(enemyTable, "is_enraged") ?? false,
                                 enemyTable.Get<int>("route_id"),
                                 enemyTable.Get<double>("path_speed"),
                                 enemyTable.Get<double>("path_progress"),
@@ -693,6 +712,11 @@ namespace ProtectTree.Runtime.Lua
                                 pieceTable.Get<LuaTable>("synergies");
                             List<ShopSynergySnapshot> synergies =
                                 new List<ShopSynergySnapshot>(synergiesTable.Length);
+                            LuaTable attackRangeTable =
+                                pieceTable.Get<LuaTable>("attack_range");
+                            List<PieceAttackRangeOffsetSnapshot> attackRange =
+                                new List<PieceAttackRangeOffsetSnapshot>(
+                                    attackRangeTable.Length);
 
                             try
                             {
@@ -735,9 +759,35 @@ namespace ProtectTree.Runtime.Lua
                                         synergyTable.Dispose();
                                     }
                                 }
+
+                                for (int offsetIndex = 1;
+                                     offsetIndex <= attackRangeTable.Length;
+                                     offsetIndex++)
+                                {
+                                    LuaTable offsetTable =
+                                        attackRangeTable.Get<int, LuaTable>(offsetIndex);
+                                    if (offsetTable == null)
+                                    {
+                                        throw new InvalidOperationException(
+                                            $"Piece attack range offset at Lua array index {offsetIndex} must be a table.");
+                                    }
+
+                                    try
+                                    {
+                                        attackRange.Add(
+                                            new PieceAttackRangeOffsetSnapshot(
+                                                offsetTable.Get<int>("forward"),
+                                                offsetTable.Get<int>("right")));
+                                    }
+                                    finally
+                                    {
+                                        offsetTable.Dispose();
+                                    }
+                                }
                             }
                             finally
                             {
+                                attackRangeTable.Dispose();
                                 synergiesTable.Dispose();
                                 deployableTerrainsTable.Dispose();
                                 blockedEnemiesTable.Dispose();
@@ -766,8 +816,13 @@ namespace ProtectTree.Runtime.Lua
                                 pieceTable.Get<string>("display_name"),
                                 pieceTable.Get<string>("portrait"),
                                 pieceTable.Get<string>("class_id"),
+                                GetOptionalString(pieceTable, "attack_sfx_id"),
                                 pieceTable.Get<int>("rarity"),
-                                synergies));
+                                synergies,
+                                attackRange,
+                                GetOptionalString(
+                                    pieceTable,
+                                    "feature_description")));
                         }
                         finally
                         {
@@ -833,9 +888,14 @@ namespace ProtectTree.Runtime.Lua
                                         synergyTable.Get<int>("player_id"),
                                         synergyTable.Get<string>("synergy_id"),
                                         synergyTable.Get<int>("level"),
+                                        GetOptionalInt(synergyTable, "layer_count")
+                                            ?? 0,
                                         synergyTable.Get<int>("unique_piece_count"),
                                         synergyTable.Get<int>("required_unique_pieces"),
-                                        synergyTable.Get<int>("damage_bonus")));
+                                        synergyTable.Get<int>("damage_bonus"),
+                                        GetOptionalString(
+                                            synergyTable,
+                                            "effect_description")));
                                 }
                                 finally
                                 {
@@ -874,12 +934,18 @@ namespace ProtectTree.Runtime.Lua
                                                 progressTable.Get<string>(
                                                     "display_name"),
                                                 progressTable.Get<int>("level"),
+                                                GetOptionalInt(
+                                                    progressTable,
+                                                    "layer_count") ?? 0,
                                                 progressTable.Get<int>(
                                                     "unique_piece_count"),
                                                 progressTable.Get<int>(
                                                     "required_unique_pieces"),
                                                 progressTable.Get<int>(
-                                                    "damage_bonus")));
+                                                    "damage_bonus"),
+                                                GetOptionalString(
+                                                    progressTable,
+                                                    "effect_description")));
                                     }
                                     finally
                                     {
@@ -1058,7 +1124,17 @@ namespace ProtectTree.Runtime.Lua
                                 offerTable.Get<int>("rarity"),
                                 offerTable.Get<int>("cost"),
                                 synergies,
-                                offerTable.Get<bool>("is_sold")));
+                                offerTable.Get<bool>("is_sold"),
+                                GetOptionalInt(offerTable, "max_health") ?? 0,
+                                GetOptionalInt(offerTable, "max_block_count")
+                                    ?? 0,
+                                GetOptionalInt(offerTable, "damage") ?? 0,
+                                GetOptionalDouble(
+                                    offerTable,
+                                    "attack_interval_seconds") ?? 0,
+                                GetOptionalString(
+                                    offerTable,
+                                    "feature_description")));
                         }
                         finally
                         {
@@ -1151,6 +1227,12 @@ namespace ProtectTree.Runtime.Lua
 
                     try
                     {
+                        int? pieceInstanceId =
+                            GetOptionalInt(eventTable, "piece_instance_id")
+                            ?? GetOptionalInt(
+                                eventTable,
+                                "survivor_piece_instance_id");
+
                         events.Add(new MatchEvent(
                             eventTable.Get<string>("type"),
                             GetOptionalInt(eventTable, "wave"),
@@ -1159,9 +1241,26 @@ namespace ProtectTree.Runtime.Lua
                             GetOptionalInt(eventTable, "spawn_index"),
                             GetOptionalInt(eventTable, "enemy_instance_id"),
                             GetOptionalString(eventTable, "result"),
-                            GetOptionalInt(eventTable, "piece_instance_id"),
+                            pieceInstanceId,
                             GetOptionalInt(eventTable, "source_piece_instance_id"),
-                            GetOptionalInt(eventTable, "source_enemy_instance_id")));
+                            GetOptionalInt(eventTable, "source_enemy_instance_id"),
+                            GetOptionalInt(eventTable, "player_id"),
+                            GetOptionalInt(eventTable, "target_player_id"),
+                            GetOptionalInt(eventTable, "defender_player_id"),
+                            GetOptionalInt(eventTable, "leak_owner_player_id"),
+                            GetOptionalInt(eventTable, "initial_leak_count"),
+                            GetOptionalInt(eventTable, "rescued_count"),
+                            GetOptionalInt(eventTable, "final_leak_count"),
+                            GetOptionalInt(eventTable, "damage"),
+                            GetOptionalInt(eventTable, "leak_count"),
+                            GetOptionalInt(eventTable, "health"),
+                            GetOptionalInt(eventTable, "leaking_player_count"),
+                            GetOptionalInt(eventTable, "transferred_enemy_count"),
+                            GetOptionalInt(eventTable, "previous_target_player_id"),
+                            GetOptionalInt(eventTable, "max_health"),
+                            GetOptionalBool(eventTable, "is_boss"),
+                            GetOptionalString(eventTable, "projectile_id"),
+                            GetOptionalDouble(eventTable, "cast_lock_seconds")));
                     }
                     finally
                     {
@@ -1282,6 +1381,11 @@ namespace ProtectTree.Runtime.Lua
         private static double? GetOptionalDouble(LuaTable table, string key)
         {
             return table.ContainsKey(key) ? table.Get<double>(key) : (double?)null;
+        }
+
+        private static bool? GetOptionalBool(LuaTable table, string key)
+        {
+            return table.ContainsKey(key) ? table.Get<bool>(key) : (bool?)null;
         }
     }
 }

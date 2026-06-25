@@ -15,8 +15,13 @@ local occupied_cells_by_player = {}
 local capacity_by_player = {}
 local active_synergies_by_player = {}
 local synergy_progresses_by_player = {}
+local synergy_layers_by_player = {}
+local gold_spent_this_preparation_by_player = {}
+local gold_spent_trait_remainders_by_piece = {}
 local pending_events = {}
 local is_battle_active = false
+local AttackTypeSingle = "Single"
+local AttackTypeArea = "Area"
 
 local function require_positive_integer(value, field_name)
     if type(value) ~= "number"
@@ -50,6 +55,9 @@ local function reset(session_options)
     capacity_by_player = {}
     active_synergies_by_player = {}
     synergy_progresses_by_player = {}
+    synergy_layers_by_player = {}
+    gold_spent_this_preparation_by_player = {}
+    gold_spent_trait_remainders_by_piece = {}
     pending_events = {}
     is_battle_active = false
 
@@ -64,6 +72,8 @@ local function reset(session_options)
         occupied_cells_by_player[player_id] = {}
         active_synergies_by_player[player_id] = {}
         synergy_progresses_by_player[player_id] = {}
+        synergy_layers_by_player[player_id] = {}
+        gold_spent_this_preparation_by_player[player_id] = 0
         capacity_by_player[player_id] = {
             player_id = player_id,
             bench_count = 0,
@@ -85,6 +95,8 @@ local function copy_piece(piece)
         display_name = config.display_name or piece.piece_id,
         portrait = config.portrait or "",
         class_id = config.class_id or "",
+        attack_sfx_id = config.attack_sfx_id or "",
+        feature_description = config.feature_description or "",
         rarity = config.rarity or 1,
         owner_player_id = piece.owner_player_id,
         level = piece.level,
@@ -104,6 +116,7 @@ local function copy_piece(piece)
         sell_value = piece.sell_value,
         synergies = {},
         deployable_terrains = {},
+        attack_range = {},
     }
 
     for _, enemy_instance_id in ipairs(piece.blocked_enemy_instance_ids) do
@@ -116,6 +129,13 @@ local function copy_piece(piece)
         end
     end
     table.sort(copy.deployable_terrains)
+
+    for _, offset in ipairs(config.attack_range) do
+        table.insert(copy.attack_range, {
+            forward = offset.forward,
+            right = offset.right,
+        })
+    end
 
     for _, synergy_id in ipairs(config.synergies) do
         local definition = synergy_configs.definitions[synergy_id]
@@ -160,6 +180,7 @@ end
 local function apply_level_stats(piece, level, level_config)
     piece.level = level
     piece.health = level_config.max_health
+    piece.base_max_health = level_config.max_health
     piece.max_health = level_config.max_health
     piece.status = "Active"
     piece.max_block_count = level_config.max_block_count
@@ -190,10 +211,218 @@ local function piece_has_synergy(piece_id, synergy_id)
     return false
 end
 
-local function get_active_synergy_level(synergy_id, unique_piece_count)
+local function get_synergy_layer_count(player_id, synergy_id)
+    local layers_by_synergy = synergy_layers_by_player[player_id]
+    if layers_by_synergy == nil then
+        return 0
+    end
+
+    return layers_by_synergy[synergy_id] or 0
+end
+
+local function add_synergy_layers(player_id, synergy_id, amount, reason)
+    require_positive_integer(player_id, "player_id")
+    require_positive_integer(amount, "synergy_layer_amount")
+
+    local definition = synergy_configs.definitions[synergy_id]
+    if definition == nil then
+        error("Synergy config not found: " .. tostring(synergy_id))
+    end
+
+    if definition.allow_layers == false then
+        return false
+    end
+
+    local layers_by_synergy = synergy_layers_by_player[player_id]
+    if layers_by_synergy == nil then
+        error("Player not found: " .. tostring(player_id))
+    end
+
+    local previous_layers = layers_by_synergy[synergy_id] or 0
+    local layers = previous_layers + amount
+    layers_by_synergy[synergy_id] = layers
+
+    table.insert(pending_events, {
+        type = "SynergyLayersChanged",
+        player_id = player_id,
+        synergy_id = synergy_id,
+        previous_layer_count = previous_layers,
+        layer_count = layers,
+        amount = amount,
+        reason = reason,
+    })
+
+    return true
+end
+
+local function get_layer_scaling_percent(layer_effect, layer_count)
+    local base_percent = layer_effect.base_percent or 10
+    local layers_per_step = layer_effect.layers_per_percent or 2
+    local percent_per_step = layer_effect.percent_per_step or 1
+
+    require_positive_integer(base_percent, "base_percent")
+    require_positive_integer(layers_per_step, "layers_per_percent")
+    require_positive_integer(percent_per_step, "percent_per_step")
+
+    return base_percent
+        + math.floor(layer_count / layers_per_step) * percent_per_step
+end
+
+local function get_storm_chance(layer_effect, layer_count)
+    local start_chance = layer_effect.chance_at_zero_layers or 10
+    local full_chance = layer_effect.chance_at_full_layers or 100
+    local full_layers = layer_effect.full_layers or 200
+
+    require_positive_integer(start_chance, "chance_at_zero_layers")
+    require_positive_integer(full_chance, "chance_at_full_layers")
+    require_positive_integer(full_layers, "full_layers")
+
+    local clamped_layers = math.min(layer_count, full_layers)
+    return math.floor(
+        start_chance
+        + (full_chance - start_chance) * clamped_layers / full_layers
+    )
+end
+
+local function get_magic_interval(layer_effect, layer_count)
+    local base_interval = layer_effect.base_interval_seconds or 15
+    local reduction_layers = layer_effect.interval_reduction_layers or 10
+    local minimum_interval = layer_effect.minimum_interval_seconds or 1
+    local reduction =
+        math.floor(layer_count / reduction_layers)
+
+    return math.max(minimum_interval, base_interval - reduction)
+end
+
+local function get_layer_damage(layer_effect, layer_count)
+    local base_damage = layer_effect.base_damage or 1
+    local layers_per_step = layer_effect.damage_layers_per_step or 10
+    local damage_per_step = layer_effect.damage_per_step or 1
+
+    require_positive_integer(base_damage, "base_damage")
+    require_positive_integer(layers_per_step, "damage_layers_per_step")
+    require_positive_integer(damage_per_step, "damage_per_step")
+
+    return base_damage
+        + math.floor(layer_count / layers_per_step) * damage_per_step
+end
+
+local function get_college_discount_by_layer_count(layer_count)
+    local definition = synergy_configs.definitions.College
+    local thresholds =
+        definition ~= nil
+        and definition.layer_effect ~= nil
+        and definition.layer_effect.thresholds
+        or {}
+    local discount = 0
+
+    for _, threshold in ipairs(thresholds) do
+        if layer_count > threshold.layers_above
+            and threshold.discount > discount then
+            discount = threshold.discount
+        end
+    end
+
+    return discount
+end
+
+local function get_shop_purchase_discount_from_layers(player_id, layer_count)
+    local is_college_active = false
+    for _, synergy in ipairs(active_synergies_by_player[player_id] or {}) do
+        if synergy.synergy_id == "College" then
+            is_college_active = true
+            break
+        end
+    end
+
+    if not is_college_active then
+        return 0
+    end
+
+    return get_college_discount_by_layer_count(layer_count)
+end
+
+local function build_effect_description(player_id, synergy_id, layer_count)
+    local definition = synergy_configs.definitions[synergy_id]
+    local layer_effect = definition ~= nil and definition.layer_effect or {}
+
+    if layer_effect.type == "ShopPurchaseDiscount" then
+        local discount = get_college_discount_by_layer_count(layer_count)
+        return "【学院】达到50层以上：商店物品购买费用-1\n【学院】达到100层以上：商店物品购买费用-2"
+    end
+
+    if layer_effect.type == "AttackPercentForSynergy" then
+        return (definition.display_name or synergy_id)
+            .. "角色攻击力+"
+            .. get_layer_scaling_percent(layer_effect, layer_count)
+            .. "%"
+    end
+
+    if layer_effect.type == "HealthPercentForAll" then
+        return "全体角色最大生命值+"
+            .. get_layer_scaling_percent(layer_effect, layer_count)
+            .. "%"
+    end
+
+    if layer_effect.type == "AttackAndHealthPercentForSynergy" then
+        return (definition.display_name or synergy_id)
+            .. "角色攻击力和最大生命值+"
+            .. get_layer_scaling_percent(layer_effect, layer_count)
+            .. "%"
+    end
+
+    if layer_effect.type == "AttackAndHealthPercentForAll" then
+        return "全体角色攻击力和最大生命值+"
+            .. (layer_effect.percent or 0)
+            .. "%"
+    end
+
+    if layer_effect.type == "StormWhirlwind" then
+        return "攻击时"
+            .. get_storm_chance(layer_effect, layer_count)
+            .. "% 概率发射旋风，伤害 "
+            .. get_layer_damage(layer_effect, layer_count)
+    end
+
+    if layer_effect.type == "MagicSword" then
+        return "每"
+            .. get_magic_interval(layer_effect, layer_count)
+            .. " 秒生成辉剑，伤害 "
+            .. get_layer_damage(layer_effect, layer_count)
+    end
+
+    return "暂无效果说明"
+end
+
+local function require_piece_attack_type(attack_type)
+    local resolved_attack_type = attack_type or AttackTypeSingle
+    if resolved_attack_type ~= AttackTypeSingle
+        and resolved_attack_type ~= AttackTypeArea then
+        error("Invalid piece attack_type: " .. tostring(resolved_attack_type))
+    end
+
+    return resolved_attack_type
+end
+
+local function get_active_synergy_level(
+    player_id,
+    synergy_id,
+    unique_piece_count)
     local definition = synergy_configs.definitions[synergy_id]
     if definition == nil or type(definition.levels) ~= "table" then
         error("Synergy config not found: " .. tostring(synergy_id))
+    end
+
+    local layer_count = get_synergy_layer_count(player_id, synergy_id)
+    if definition.exact_unique_pieces ~= nil then
+        require_positive_integer(
+            definition.exact_unique_pieces,
+            "exact_unique_pieces"
+        )
+
+        if unique_piece_count ~= definition.exact_unique_pieces then
+            return nil
+        end
     end
 
     local active_level = nil
@@ -208,9 +437,15 @@ local function get_active_synergy_level(synergy_id, unique_piece_count)
             active_level = {
                 synergy_id = synergy_id,
                 level = level,
+                layer_count = layer_count,
                 unique_piece_count = unique_piece_count,
                 required_unique_pieces = config.required_unique_pieces,
                 damage_bonus = config.damage_bonus,
+                effect_description = build_effect_description(
+                    player_id,
+                    synergy_id,
+                    layer_count
+                ),
             }
         end
     end
@@ -227,6 +462,9 @@ local function active_synergies_equal(first, second)
         local second_synergy = second[index]
         if first_synergy.synergy_id ~= second_synergy.synergy_id
             or first_synergy.level ~= second_synergy.level
+            or first_synergy.layer_count ~= second_synergy.layer_count
+            or first_synergy.effect_description
+                ~= second_synergy.effect_description
             or first_synergy.unique_piece_count
                 ~= second_synergy.unique_piece_count then
             return false
@@ -241,9 +479,11 @@ local function copy_active_synergy(player_id, synergy)
         player_id = player_id,
         synergy_id = synergy.synergy_id,
         level = synergy.level,
+        layer_count = synergy.layer_count,
         unique_piece_count = synergy.unique_piece_count,
         required_unique_pieces = synergy.required_unique_pieces,
         damage_bonus = synergy.damage_bonus,
+        effect_description = synergy.effect_description,
     }
 end
 
@@ -253,13 +493,19 @@ local function copy_synergy_progress(player_id, progress)
         synergy_id = progress.synergy_id,
         display_name = progress.display_name,
         level = progress.level,
+        layer_count = progress.layer_count,
         unique_piece_count = progress.unique_piece_count,
         required_unique_pieces = progress.required_unique_pieces,
         damage_bonus = progress.damage_bonus,
+        effect_description = progress.effect_description,
     }
 end
 
-local function build_synergy_progress(synergy_id, unique_piece_count, active_level)
+local function build_synergy_progress(
+    player_id,
+    synergy_id,
+    unique_piece_count,
+    active_level)
     local definition = synergy_configs.definitions[synergy_id]
     local required_unique_pieces = nil
 
@@ -283,10 +529,137 @@ local function build_synergy_progress(synergy_id, unique_piece_count, active_lev
         synergy_id = synergy_id,
         display_name = definition.display_name or synergy_id,
         level = active_level ~= nil and active_level.level or 0,
+        layer_count = get_synergy_layer_count(player_id, synergy_id),
         unique_piece_count = unique_piece_count,
         required_unique_pieces = required_unique_pieces,
         damage_bonus = active_level ~= nil and active_level.damage_bonus or 0,
+        effect_description = build_effect_description(
+            player_id,
+            synergy_id,
+            get_synergy_layer_count(player_id, synergy_id)
+        ),
     }
+end
+
+local function get_active_synergy_by_id(active_synergies)
+    local active_by_id = {}
+
+    for _, synergy in ipairs(active_synergies) do
+        active_by_id[synergy.synergy_id] = synergy
+    end
+
+    return active_by_id
+end
+
+local function is_synergy_active(active_by_id, synergy_id)
+    return active_by_id[synergy_id] ~= nil
+end
+
+local function add_percent_for_active_layers(
+    active_by_id,
+    synergy_id,
+    percent_per_layer)
+    local synergy = active_by_id[synergy_id]
+    if synergy == nil then
+        return 0
+    end
+
+    return synergy.layer_count * percent_per_layer
+end
+
+local function apply_percent(base_value, percent)
+    local result = math.floor(base_value * (100 + percent) / 100)
+    return math.max(1, result)
+end
+
+local function get_trait_list(piece_id)
+    local traits = piece_configs[piece_id].traits
+    if type(traits) ~= "table" then
+        return {}
+    end
+
+    return traits
+end
+
+local function apply_recomputed_piece_stats(piece, active_synergies, active_by_id)
+    local attack_percent = 0
+    local health_percent = 0
+
+    if piece.location == "Board" then
+        for _, synergy in ipairs(active_synergies) do
+            local definition = synergy_configs.definitions[synergy.synergy_id]
+            local layer_effect = definition.layer_effect or {}
+
+            if layer_effect.type == "AttackPercentForSynergy"
+                and piece_has_synergy(piece.piece_id, synergy.synergy_id) then
+                attack_percent =
+                    attack_percent
+                    + get_layer_scaling_percent(
+                        layer_effect,
+                        synergy.layer_count
+                    )
+            elseif layer_effect.type == "HealthPercentForAll" then
+                health_percent =
+                    health_percent
+                    + get_layer_scaling_percent(
+                        layer_effect,
+                        synergy.layer_count
+                    )
+            elseif layer_effect.type == "AttackAndHealthPercentForSynergy"
+                and piece_has_synergy(piece.piece_id, synergy.synergy_id) then
+                local percent = get_layer_scaling_percent(
+                    layer_effect,
+                    synergy.layer_count
+                )
+                attack_percent = attack_percent + percent
+                health_percent = health_percent + percent
+            elseif layer_effect.type == "AttackAndHealthPercentForAll" then
+                local percent = layer_effect.percent or 0
+                attack_percent = attack_percent + percent
+                health_percent = health_percent + percent
+            end
+        end
+
+        for _, trait in ipairs(get_trait_list(piece.piece_id)) do
+            local percent_per_layer = trait.percent_per_layer or 0
+
+            if trait.type == "SelfAttackPercentFromActiveSynergyLayers" then
+                for _, synergy_id in ipairs(trait.synergy_ids or {}) do
+                    attack_percent = attack_percent
+                        + add_percent_for_active_layers(
+                            active_by_id,
+                            synergy_id,
+                            percent_per_layer
+                        )
+                end
+            elseif trait.type ==
+                "SelfAttackAndHealthPercentFromActiveSynergyLayers" then
+                for _, synergy_id in ipairs(trait.synergy_ids or {}) do
+                    local percent = add_percent_for_active_layers(
+                        active_by_id,
+                        synergy_id,
+                        percent_per_layer
+                    )
+                    attack_percent = attack_percent + percent
+                    health_percent = health_percent + percent
+                end
+            end
+        end
+    end
+
+    local previous_max_health = piece.max_health
+    piece.damage = apply_percent(piece.base_damage, attack_percent)
+    piece.max_health = apply_percent(piece.base_max_health, health_percent)
+
+    if piece.status == "Active" then
+        local health_delta = piece.max_health - previous_max_health
+        piece.health = math.min(
+            piece.max_health,
+            math.max(1, piece.health + health_delta)
+        )
+    else
+        piece.health = math.min(piece.health, piece.max_health)
+    end
 end
 
 local function recompute_synergies(player_id)
@@ -314,7 +687,7 @@ local function recompute_synergies(player_id)
         end
 
         local active_level =
-            get_active_synergy_level(synergy_id, unique_piece_count)
+            get_active_synergy_level(player_id, synergy_id, unique_piece_count)
         if active_level ~= nil then
             table.insert(active_synergies, active_level)
         end
@@ -322,23 +695,22 @@ local function recompute_synergies(player_id)
         -- UI 需要知道“已有角色但尚未激活”的进度，不能只暴露已激活羁绊。
         table.insert(
             synergy_progresses,
-            build_synergy_progress(synergy_id, unique_piece_count, active_level)
+            build_synergy_progress(
+                player_id,
+                synergy_id,
+                unique_piece_count,
+                active_level
+            )
         )
     end
 
-    -- 羁绊只由战场阵容决定，也只强化战场上的对应羁绊棋子。
+    local active_by_id = get_active_synergy_by_id(active_synergies)
+
+    -- 羁绊激活只由战场阵容决定；层数负责决定已激活羁绊的效果强度。
     for _, instance_id in ipairs(ordered_piece_ids) do
         local piece = pieces_by_id[instance_id]
         if piece.owner_player_id == player_id then
-            piece.damage = piece.base_damage
-
-            if piece.location == "Board" then
-                for _, synergy in ipairs(active_synergies) do
-                    if piece_has_synergy(piece.piece_id, synergy.synergy_id) then
-                        piece.damage = piece.damage + synergy.damage_bonus
-                    end
-                end
-            end
+            apply_recomputed_piece_stats(piece, active_synergies, active_by_id)
         end
     end
 
@@ -404,6 +776,11 @@ local function validate_synergy_configs()
             error("Piece must contain at least one synergy: " .. piece_id)
         end
 
+        if config.attack_sfx_id ~= nil
+            and type(config.attack_sfx_id) ~= "string" then
+            error("Piece attack_sfx_id must be a string: " .. piece_id)
+        end
+
         for _, synergy_id in ipairs(config.synergies) do
             if not ordered_synergy_ids[synergy_id] then
                 error("Piece synergy is not in configured order: " .. synergy_id)
@@ -437,7 +814,238 @@ local function remove_piece(piece)
     end
 
     pieces_by_id[piece.instance_id] = nil
+    gold_spent_trait_remainders_by_piece[piece.instance_id] = nil
     remove_ordered_piece_id(piece.instance_id)
+end
+
+local function is_piece_location_allowed_for_trait(piece, trait)
+    if trait.requires_location == nil then
+        return true
+    end
+
+    return piece.location == trait.requires_location
+end
+
+local function add_active_synergy_layers(player_id, synergy_id, amount, reason)
+    for _, synergy in ipairs(active_synergies_by_player[player_id] or {}) do
+        if synergy.synergy_id == synergy_id then
+            return add_synergy_layers(player_id, synergy_id, amount, reason)
+        end
+    end
+
+    return false
+end
+
+local function add_layers_to_active_synergies(
+    player_id,
+    synergy_ids,
+    amount,
+    reason)
+    local did_change_layers = false
+
+    for _, synergy_id in ipairs(synergy_ids or {}) do
+        did_change_layers = add_active_synergy_layers(
+            player_id,
+            synergy_id,
+            amount,
+            reason
+        ) or did_change_layers
+    end
+
+    return did_change_layers
+end
+
+local function apply_grant_traits(piece)
+    local config = piece_configs[piece.piece_id]
+
+    for _, trait in ipairs(get_trait_list(piece.piece_id)) do
+        if trait.type == "OnGrantAddOwnSynergyLayers" then
+            for _, synergy_id in ipairs(config.synergies) do
+                add_synergy_layers(
+                    piece.owner_player_id,
+                    synergy_id,
+                    trait.amount,
+                    "PieceGranted:" .. piece.piece_id
+                )
+            end
+        elseif trait.type == "OnGrantAddSynergyLayers" then
+            add_synergy_layers(
+                piece.owner_player_id,
+                trait.synergy_id,
+                trait.amount,
+                "PieceGranted:" .. piece.piece_id
+            )
+        end
+    end
+end
+
+local function get_board_pieces_with_trait(player_id, trait_type)
+    local result = {}
+
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        if piece.owner_player_id == player_id and piece.location == "Board" then
+            for _, trait in ipairs(get_trait_list(piece.piece_id)) do
+                if trait.type == trait_type
+                    and is_piece_location_allowed_for_trait(piece, trait) then
+                    table.insert(result, {
+                        piece = piece,
+                        trait = trait,
+                    })
+                end
+            end
+        end
+    end
+
+    return result
+end
+
+local function handle_gold_spent(event)
+    require_positive_integer(event.player_id, "player_id")
+    require_non_negative_integer(event.amount, "amount")
+
+    if event.amount == 0 then
+        return
+    end
+
+    local player_id = event.player_id
+    gold_spent_this_preparation_by_player[player_id] =
+        (gold_spent_this_preparation_by_player[player_id] or 0)
+        + event.amount
+
+    local did_change_layers = false
+    for _, entry in ipairs(
+        get_board_pieces_with_trait(
+            player_id,
+            "OnGoldSpentAddActiveSynergyLayers"
+        )
+    ) do
+        local piece = entry.piece
+        local trait = entry.trait
+        local every_gold = trait.every_gold
+        require_positive_integer(every_gold, "every_gold")
+
+        local previous_remainder =
+            gold_spent_trait_remainders_by_piece[piece.instance_id] or 0
+        local total = previous_remainder + event.amount
+        local trigger_count = math.floor(total / every_gold)
+        gold_spent_trait_remainders_by_piece[piece.instance_id] =
+            total % every_gold
+
+        if trigger_count > 0 then
+            did_change_layers = add_layers_to_active_synergies(
+                player_id,
+                trait.synergy_ids,
+                trait.amount * trigger_count,
+                "GoldSpent:" .. piece.piece_id
+            ) or did_change_layers
+        end
+    end
+
+    if did_change_layers then
+        recompute_synergies(player_id)
+    end
+end
+
+local function handle_preparation_started()
+    for _, player_id in ipairs(ordered_player_ids) do
+        gold_spent_this_preparation_by_player[player_id] = 0
+    end
+end
+
+local function handle_preparation_ended()
+    local changed_players = {}
+
+    for _, player_id in ipairs(ordered_player_ids) do
+        local spent = gold_spent_this_preparation_by_player[player_id] or 0
+
+        for _, entry in ipairs(
+            get_board_pieces_with_trait(
+                player_id,
+                "OnPreparationEndGoldSpentAddActiveSynergyLayers"
+            )
+        ) do
+            local trait = entry.trait
+            local every_gold = trait.every_gold
+            require_positive_integer(every_gold, "every_gold")
+
+            local trigger_count = math.floor(spent / every_gold)
+            if trigger_count > 0 then
+                local did_add = add_layers_to_active_synergies(
+                    player_id,
+                    trait.synergy_ids,
+                    trait.amount * trigger_count,
+                    "PreparationEnded:" .. entry.piece.piece_id
+                )
+                if did_add then
+                    changed_players[player_id] = true
+                end
+            end
+        end
+
+        gold_spent_this_preparation_by_player[player_id] = 0
+    end
+
+    for player_id in pairs(changed_players) do
+        recompute_synergies(player_id)
+    end
+end
+
+local function handle_enemy_defeated(event)
+    if event.source_piece_instance_id == nil then
+        return
+    end
+
+    local piece = pieces_by_id[event.source_piece_instance_id]
+    if piece == nil then
+        return
+    end
+
+    local did_change_layers = false
+    for _, trait in ipairs(get_trait_list(piece.piece_id)) do
+        if trait.type == "OnKillAddActiveSynergyLayers" then
+            if add_active_synergy_layers(
+                piece.owner_player_id,
+                trait.synergy_id,
+                trait.amount,
+                "EnemyDefeated:" .. piece.piece_id
+            ) then
+                did_change_layers = true
+            end
+        end
+    end
+
+    if did_change_layers then
+        recompute_synergies(piece.owner_player_id)
+    end
+end
+
+local function handle_player_leak_resolved(event)
+    require_positive_integer(event.player_id, "player_id")
+
+    if event.final_leak_count ~= 0 then
+        return
+    end
+
+    local did_change_layers = false
+    for _, entry in ipairs(
+        get_board_pieces_with_trait(
+            event.player_id,
+            "OnPerfectBattleAddSynergyLayers"
+        )
+    ) do
+            local did_add = add_synergy_layers(
+                event.player_id,
+                entry.trait.synergy_id,
+                entry.trait.amount,
+                "PerfectBattle:" .. entry.piece.piece_id
+            )
+            did_change_layers = did_change_layers or did_add
+        end
+
+    if did_change_layers then
+        recompute_synergies(event.player_id)
+    end
 end
 
 local function find_free_cell_id(player_id, ordered_cell_ids)
@@ -450,6 +1058,46 @@ local function find_free_cell_id(player_id, ordered_cell_ids)
     end
 
     return nil
+end
+
+local function accepts_reserve_piece(cell)
+    return cell ~= nil
+        and board.zone_definitions[cell.zone] ~= nil
+        and board.zone_definitions[cell.zone].accepts_reserve_piece == true
+end
+
+local function can_piece_occupy_cell(piece, cell)
+    if cell == nil then
+        return false
+    end
+
+    if accepts_reserve_piece(cell) then
+        return true
+    end
+
+    return cell.terrain ~= "Obstacle"
+        and board_queries.is_cell_battle_deployable(cell)
+        and piece.deployable_terrains[cell.terrain] == true
+end
+
+local function adjust_capacity_for_location(capacity, location, amount)
+    if location == "Board" then
+        capacity.board_count = capacity.board_count + amount
+    elseif location == "TemporaryReserve" then
+        capacity.temporary_bench_count =
+            capacity.temporary_bench_count + amount
+    elseif location == "Bench" then
+        capacity.bench_count = capacity.bench_count + amount
+    end
+end
+
+local function move_capacity_between_locations(capacity, from_location, to_location)
+    if from_location == to_location then
+        return
+    end
+
+    adjust_capacity_for_location(capacity, from_location, -1)
+    adjust_capacity_for_location(capacity, to_location, 1)
 end
 
 local function find_merge_piece_ids(player_id, piece_id, level)
@@ -583,6 +1231,7 @@ function M.grant_piece(player_id, piece_id, allow_overflow)
         "attack_interval_seconds"
     )
     require_positive_number(config.recovery_seconds, "recovery_seconds")
+    require_piece_attack_type(config.attack_type)
 
     if type(config.deployable_terrains) ~= "table" then
         error("deployable_terrains must be a table: " .. tostring(piece_id))
@@ -629,6 +1278,7 @@ function M.grant_piece(player_id, piece_id, allow_overflow)
         terrain = reserve_cell.terrain,
         facing = config.default_facing,
         health = level_config.max_health,
+        base_max_health = level_config.max_health,
         max_health = level_config.max_health,
         status = "Active",
         max_block_count = level_config.max_block_count,
@@ -663,6 +1313,7 @@ function M.grant_piece(player_id, piece_id, allow_overflow)
         location = piece.location,
     })
 
+    apply_grant_traits(piece)
     local surviving_instance_id =
         try_merge(player_id, piece_id, 1) or piece.instance_id
     recompute_synergies(player_id)
@@ -682,7 +1333,7 @@ function M.sell_piece(player_id, piece_instance_id)
         error("Cannot sell a piece owned by another player")
     end
 
-    -- 实例 ID 永不复用；从稳定顺序表移除后，所有后续快照与战斗规划器都不再看到该棋子。
+    -- 实例 ID 永不复用；从稳定顺序表移除后，后续快照与战斗规划器都不再看到该棋子。
     remove_piece(piece)
 
     table.insert(pending_events, {
@@ -760,19 +1411,64 @@ local function handle_deploy_requested(event)
 
     local occupied_cells = occupied_cells_by_player[player_id]
     local occupying_piece_id = occupied_cells[cell_id]
-
-    if occupying_piece_id ~= nil then
-        error(
-            "Cell "
-            .. cell_id
-            .. " is already occupied for player "
-            .. player_id
-        )
-    end
-
     local previous_cell_id = piece.cell_id
     local previous_location = piece.location
     local capacity = capacity_by_player[player_id]
+
+    if occupying_piece_id ~= nil then
+        local occupying_piece = pieces_by_id[occupying_piece_id]
+        local previous_cell = board.cells[previous_cell_id]
+
+        if occupying_piece == nil
+            or occupying_piece.owner_player_id ~= player_id
+            or occupying_piece.location ~= "Board" then
+            error(
+                "Cell "
+                .. cell_id
+                .. " is already occupied for player "
+                .. player_id
+            )
+        end
+
+        if previous_cell_id == nil
+            or not can_piece_occupy_cell(occupying_piece, previous_cell) then
+            error(
+                "Cannot swap piece "
+                .. occupying_piece.piece_id
+                .. " to previous cell "
+                .. tostring(previous_cell_id)
+            )
+        end
+
+        move_capacity_between_locations(capacity, previous_location, "Board")
+        move_capacity_between_locations(capacity, "Board", previous_location)
+
+        occupied_cells[previous_cell_id] = occupying_piece.instance_id
+        occupied_cells[cell_id] = piece.instance_id
+
+        piece.location = "Board"
+        piece.cell_id = cell_id
+        piece.terrain = cell.terrain
+
+        occupying_piece.location = previous_location
+        occupying_piece.cell_id = previous_cell_id
+        occupying_piece.terrain = previous_cell.terrain
+        if previous_location ~= "Board" then
+            occupying_piece.blocked_enemy_instance_ids = {}
+        end
+
+        table.insert(pending_events, {
+            type = "PiecesSwapped",
+            player_id = player_id,
+            piece_instance_id = piece.instance_id,
+            swapped_piece_instance_id = occupying_piece.instance_id,
+            cell_id = piece.cell_id,
+            previous_cell_id = previous_cell_id,
+        })
+
+        recompute_synergies(player_id)
+        return
+    end
 
     if previous_location ~= "Board" then
         if capacity.board_count >= capacity.deployment_limit then
@@ -780,13 +1476,7 @@ local function handle_deploy_requested(event)
         end
 
         -- 只有从备战区首次进入战场时才改变容量计数；战场格之间移动不改变人口。
-        if previous_location == "TemporaryReserve" then
-            capacity.temporary_bench_count =
-                capacity.temporary_bench_count - 1
-        else
-            capacity.bench_count = capacity.bench_count - 1
-        end
-        capacity.board_count = capacity.board_count + 1
+        move_capacity_between_locations(capacity, previous_location, "Board")
     end
 
     if previous_cell_id ~= nil then
@@ -1087,6 +1777,31 @@ function M.handle_event(event)
 
     if event.type == "PieceDamageRequested" then
         handle_damage_requested(event)
+        return
+    end
+
+    if event.type == "GoldSpent" then
+        handle_gold_spent(event)
+        return
+    end
+
+    if event.type == "PreparationStarted" then
+        handle_preparation_started()
+        return
+    end
+
+    if event.type == "PreparationEnded" then
+        handle_preparation_ended()
+        return
+    end
+
+    if event.type == "EnemyDefeated" then
+        handle_enemy_defeated(event)
+        return
+    end
+
+    if event.type == "PlayerLeakResolved" then
+        handle_player_leak_resolved(event)
     end
 end
 
@@ -1114,11 +1829,26 @@ function M.end_battle()
         local piece = pieces_by_id[instance_id]
         piece.blocked_enemy_instance_ids = {}
 
-        if piece.status == "Downed" then
-            -- 个人防守与未来联防属于同一战斗阶段；只有整个战斗阶段结束才强制起身。
+        if piece.status == "Downed" or piece.health < piece.max_health then
             recover_piece(piece, "BattleEnded")
         end
     end
+end
+
+function M.are_all_board_pieces_downed(player_id)
+    local board_piece_count = 0
+
+    for _, instance_id in ipairs(ordered_piece_ids) do
+        local piece = pieces_by_id[instance_id]
+        if piece.owner_player_id == player_id and piece.location == "Board" then
+            board_piece_count = board_piece_count + 1
+            if piece.status ~= "Downed" then
+                return false
+            end
+        end
+    end
+
+    return board_piece_count > 0
 end
 
 function M.update(delta_time)
@@ -1184,6 +1914,22 @@ function M.get_snapshot()
         active_synergies = active_synergies,
         synergy_progresses = synergy_progresses,
     }
+end
+
+function M.get_shop_purchase_discount(player_id)
+    require_positive_integer(player_id, "player_id")
+    return get_shop_purchase_discount_from_layers(
+        player_id,
+        get_synergy_layer_count(player_id, "College")
+    )
+end
+
+function M.get_shop_purchase_cost(player_id, base_cost)
+    require_positive_integer(player_id, "player_id")
+    require_positive_integer(base_cost, "base_cost")
+
+    local discount = M.get_shop_purchase_discount(player_id)
+    return math.max(0, base_cost - discount)
 end
 
 function M.drain_events()

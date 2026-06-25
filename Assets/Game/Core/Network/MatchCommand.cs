@@ -60,6 +60,11 @@ namespace ProtectTree.Core.Network
             return new MatchCommand(MatchCommandType.ToggleShopLock);
         }
 
+        public static MatchCommand RequestSnapshot()
+        {
+            return new MatchCommand(MatchCommandType.RequestSnapshot);
+        }
+
         public static MatchCommand DeployPiece(int pieceInstanceId, int cellId)
         {
             RequirePositive(pieceInstanceId, nameof(pieceInstanceId));

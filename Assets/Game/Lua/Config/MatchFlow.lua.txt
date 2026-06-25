@@ -1,7 +1,10 @@
 return {
-    normal_wave_count = 5,
-    boss_wave = 6,
-    preparation_seconds = 30,
-    boss_preparation_seconds = 30,
+    preparation_seconds = 90,
+    battle_defense_seconds = 90,
+    joint_defense_intro_seconds = 1.5,
+    boss_preparation_seconds = 90,
+    boss_defense_seconds = 300,
+    joint_defense_seconds = 90,
+    boss_transfer_intro_seconds = 0.75,
     settlement_seconds = 2,
 }

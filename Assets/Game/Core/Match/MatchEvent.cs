@@ -12,7 +12,24 @@ namespace ProtectTree.Core.Match
             string result = null,
             int? pieceInstanceId = null,
             int? sourcePieceInstanceId = null,
-            int? sourceEnemyInstanceId = null)
+            int? sourceEnemyInstanceId = null,
+            int? playerId = null,
+            int? targetPlayerId = null,
+            int? defenderPlayerId = null,
+            int? leakOwnerPlayerId = null,
+            int? initialLeakCount = null,
+            int? rescuedCount = null,
+            int? finalLeakCount = null,
+            int? damage = null,
+            int? leakCount = null,
+            int? health = null,
+            int? leakingPlayerCount = null,
+            int? transferredEnemyCount = null,
+            int? previousTargetPlayerId = null,
+            int? maxHealth = null,
+            bool? isBoss = null,
+            string projectileId = null,
+            double? castLockSeconds = null)
         {
             Type = type;
             Wave = wave;
@@ -24,6 +41,23 @@ namespace ProtectTree.Core.Match
             PieceInstanceId = pieceInstanceId;
             SourcePieceInstanceId = sourcePieceInstanceId;
             SourceEnemyInstanceId = sourceEnemyInstanceId;
+            PlayerId = playerId;
+            TargetPlayerId = targetPlayerId;
+            DefenderPlayerId = defenderPlayerId;
+            LeakOwnerPlayerId = leakOwnerPlayerId;
+            InitialLeakCount = initialLeakCount;
+            RescuedCount = rescuedCount;
+            FinalLeakCount = finalLeakCount;
+            Damage = damage;
+            LeakCount = leakCount;
+            Health = health;
+            LeakingPlayerCount = leakingPlayerCount;
+            TransferredEnemyCount = transferredEnemyCount;
+            PreviousTargetPlayerId = previousTargetPlayerId;
+            MaxHealth = maxHealth;
+            IsBoss = isBoss;
+            ProjectileId = projectileId;
+            CastLockSeconds = castLockSeconds;
         }
 
         public string Type { get; }
@@ -45,5 +79,39 @@ namespace ProtectTree.Core.Match
         public int? SourcePieceInstanceId { get; }
 
         public int? SourceEnemyInstanceId { get; }
+
+        public int? PlayerId { get; }
+
+        public int? TargetPlayerId { get; }
+
+        public int? DefenderPlayerId { get; }
+
+        public int? LeakOwnerPlayerId { get; }
+
+        public int? InitialLeakCount { get; }
+
+        public int? RescuedCount { get; }
+
+        public int? FinalLeakCount { get; }
+
+        public int? Damage { get; }
+
+        public int? LeakCount { get; }
+
+        public int? Health { get; }
+
+        public int? LeakingPlayerCount { get; }
+
+        public int? TransferredEnemyCount { get; }
+
+        public int? PreviousTargetPlayerId { get; }
+
+        public int? MaxHealth { get; }
+
+        public bool? IsBoss { get; }
+
+        public string ProjectileId { get; }
+
+        public double? CastLockSeconds { get; }
     }
 }

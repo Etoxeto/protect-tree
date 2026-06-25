@@ -8,6 +8,18 @@ local ordered_player_ids = {}
 local alive_count = 0
 local pending_events = {}
 
+local function require_non_negative_integer(value, field_name)
+    if type(value) ~= "number"
+        or value < 0
+        or value % 1 ~= 0 then
+        error(
+            field_name
+            .. " must be a non-negative integer: "
+            .. tostring(value)
+        )
+    end
+end
+
 local function reset(session_options)
     active_player_configs, ordered_player_ids =
         player_config.get_active_player_configs(session_options)
@@ -33,9 +45,11 @@ function M.start(session_options)
             error("Invalid starting_gold for player: " .. player_id)
         end
 
-        if config.round_reward == nil or config.round_reward < 0 then
-            error("Invalid round_reward for player: " .. player_id)
-        end
+        require_non_negative_integer(config.round_reward, "round_reward")
+        require_non_negative_integer(
+            config.round_reward_per_wave_increment or 0,
+            "round_reward_per_wave_increment"
+        )
     end
 
     for _, player_id in ipairs(ordered_player_ids) do
@@ -51,18 +65,6 @@ function M.start(session_options)
         }
 
         alive_count = alive_count + 1
-    end
-end
-
-local function require_non_negative_integer(value, field_name)
-    if type(value) ~= "number"
-        or value < 0
-        or value % 1 ~= 0 then
-        error(
-            field_name
-            .. " must be a non-negative integer: "
-            .. tostring(value)
-        )
     end
 end
 
@@ -87,7 +89,7 @@ function M.handle_event(event)
         event.initial_leak_count,
         "initial_leak_count"
     )
-    
+
     require_non_negative_integer(
         event.rescued_count,
         "rescued_count"
@@ -267,12 +269,28 @@ function M.grant_gold(player_id, amount, reason, wave)
     table.insert(pending_events, event)
 end
 
+local function get_round_reward_amount(config, wave)
+    local current_wave = wave or 1
+    if type(current_wave) ~= "number"
+        or current_wave < 1
+        or current_wave % 1 ~= 0 then
+        error("wave must be a positive integer: " .. tostring(wave))
+    end
+
+    local base_reward = config.round_reward
+    local increment = config.round_reward_per_wave_increment or 0
+    return base_reward + (current_wave - 1) * increment
+end
+
 function M.grant_round_reward(wave)
     for _, player_id in ipairs(ordered_player_ids) do
         local player = players_by_id[player_id]
 
         if player.status == "Alive" then
-            local amount = active_player_configs[player_id].round_reward
+            local amount = get_round_reward_amount(
+                active_player_configs[player_id],
+                wave
+            )
             M.grant_gold(player_id, amount, "RoundReward", wave)
         end
     end

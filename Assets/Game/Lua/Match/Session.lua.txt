@@ -13,11 +13,33 @@ local shop_roster = require("Match.ShopRoster")
 local board_snapshot = require("Match.BoardSnapshot")
 local board_validator = require("Match.BoardValidator")
 local board = require("Config.Board")
+local flow_config = require("Config.MatchFlow")
 
 local is_started = false
 local pending_events = {}
 local is_wave_spawn_completed = false
 local is_combat_active = false
+local pending_joint_defense_plan = nil
+local pending_boss_transfer = nil
+local boss_downed_transfer_player_id = nil
+local boss_minion_respawn_index = 0
+
+local route_enemy_events
+local route_flow_events
+local try_complete_battle
+
+local function is_combat_lifecycle_phase(phase)
+    return phase == "Battle"
+        or phase == "JointDefenseIntro"
+        or phase == "JointDefense"
+        or phase == "BossBattle"
+end
+
+local function is_combat_simulation_phase(phase)
+    return phase == "Battle"
+        or phase == "JointDefense"
+        or phase == "BossBattle"
+end
 
 local function publish(events)
     for _, event in ipairs(events) do
@@ -35,7 +57,7 @@ local function copy_event(event)
     return copied
 end
 
-local function get_spawn_target_player_ids()
+local function get_spawn_target_player_ids(spawn_event)
     local alive_player_ids = player_roster.get_alive_player_ids()
     local flow_snapshot = flow.get_snapshot()
 
@@ -43,8 +65,11 @@ local function get_spawn_target_player_ids()
         return alive_player_ids
     end
 
-    -- 多人共享 Boss 需要独立的共享战场所有权。当前本地多人原型只验证普通个人防守，
-    -- 因此 Boss 临时锚定到首个存活玩家，避免错误生成“每人一个 Boss”的规则。
+    if spawn_event.spawn_scope ~= "SharedBoss" then
+        return alive_player_ids
+    end
+
+    -- 共享 Boss 只在一个存活玩家棋盘上生成，后续通过换场事件切换目标棋盘。
     if #alive_player_ids == 0 then
         return alive_player_ids
     end
@@ -54,17 +79,155 @@ local function get_spawn_target_player_ids()
     }
 end
 
-local function route_enemy_events()
-    local events = enemy_roster.drain_events()
+local function reset_boss_board_rotation()
+    boss_downed_transfer_player_id = nil
+    pending_boss_transfer = nil
+end
 
-    for _, event in ipairs(events) do
-        -- Boss 到达终点直接决定 Boss 战失败，不进入普通波次漏怪结算。
-        if not event.is_boss then
-            leak_resolver.handle_event(event)
+local function begin_boss_board_rotation()
+    reset_boss_board_rotation()
+end
+
+local function get_next_alive_player_id(current_player_id)
+    local alive_player_ids = player_roster.get_alive_player_ids()
+
+    if #alive_player_ids == 0 then
+        return nil
+    end
+
+    if #alive_player_ids == 1 then
+        return alive_player_ids[1]
+    end
+
+    local current_index = 1
+    for index, player_id in ipairs(alive_player_ids) do
+        if player_id == current_player_id then
+            current_index = index
+            break
         end
     end
 
-    publish(events)
+    local next_index = current_index + 1
+    if next_index > #alive_player_ids then
+        next_index = 1
+    end
+
+    return alive_player_ids[next_index]
+end
+
+local function try_rotate_boss_board(wave, reason)
+    local current_player_id = enemy_roster.get_boss_target_player_id(wave)
+    if current_player_id == nil then
+        return false
+    end
+
+    local next_player_id = get_next_alive_player_id(current_player_id)
+    if next_player_id == nil then
+        return false
+    end
+
+    enemy_roster.handle_event({
+        type = "BossRetargetRequested",
+        wave = wave,
+        target_player_id = next_player_id,
+        route_id = board.boss_routes ~= nil
+            and board.boss_routes.outbound_route_id
+            or nil,
+        path_progress = 0,
+        reason = reason,
+    })
+    route_enemy_events()
+    return true
+end
+
+local function schedule_boss_transfer(event)
+    if pending_boss_transfer ~= nil then
+        return
+    end
+
+    pending_boss_transfer = {
+        wave = event.wave,
+        reason = event.reason or "RouteCompleted",
+        remaining_seconds = flow_config.boss_transfer_intro_seconds or 0.75,
+    }
+end
+
+local function publish_boss_transfer_requested(wave, reason)
+    if pending_boss_transfer ~= nil then
+        return false
+    end
+
+    local snapshot = enemy_roster.get_snapshot()
+
+    for _, enemy in ipairs(snapshot.enemies) do
+        if enemy.wave == wave
+            and enemy.is_boss
+            and enemy.status == "Alive" then
+            local event = {
+                type = "BossTransferRequested",
+                wave = enemy.wave,
+                enemy_id = enemy.enemy_id,
+                enemy_instance_id = enemy.instance_id,
+                target_player_id = enemy.target_player_id,
+                route_id = enemy.route_id,
+                path_progress = enemy.path_progress,
+                health = enemy.health,
+                max_health = enemy.max_health,
+                is_boss = true,
+                reason = reason,
+            }
+            table.insert(pending_events, event)
+            schedule_boss_transfer(event)
+            return true
+        end
+    end
+
+    return false
+end
+
+local function update_pending_boss_transfer(delta_time)
+    if pending_boss_transfer == nil then
+        return
+    end
+
+    pending_boss_transfer.remaining_seconds =
+        pending_boss_transfer.remaining_seconds - delta_time
+    if pending_boss_transfer.remaining_seconds > 0 then
+        return
+    end
+
+    local transfer = pending_boss_transfer
+    pending_boss_transfer = nil
+    try_rotate_boss_board(transfer.wave, transfer.reason)
+end
+
+local function update_boss_board_rotation()
+    local flow_snapshot = flow.get_snapshot()
+    if flow_snapshot.phase ~= "BossBattle" then
+        return
+    end
+
+    local target_player_id =
+        enemy_roster.get_boss_target_player_id(flow_snapshot.wave)
+    if target_player_id == nil then
+        boss_downed_transfer_player_id = nil
+        return
+    end
+
+    if not piece_roster.are_all_board_pieces_downed(target_player_id) then
+        if boss_downed_transfer_player_id == target_player_id then
+            boss_downed_transfer_player_id = nil
+        end
+        return
+    end
+
+    -- 只统计已上场棋子；备战区棋子不参与“全员倒地”的 Boss 换场判断。
+    if boss_downed_transfer_player_id ~= target_player_id then
+        boss_downed_transfer_player_id = target_player_id
+        publish_boss_transfer_requested(
+            flow_snapshot.wave,
+            "AllBoardPiecesDowned")
+    end
 end
 
 local function route_piece_events()
@@ -79,14 +242,101 @@ local function route_player_events()
     publish(player_roster.drain_events())
 end
 
+local function route_leak_events()
+    local events = leak_resolver.drain_events()
+
+    for _, event in ipairs(events) do
+        piece_roster.handle_event(event)
+        player_roster.handle_event(event)
+    end
+
+    publish(events)
+    publish(player_roster.drain_events())
+    route_piece_events()
+end
+
+local function awaken_boss_minions(wave)
+    enemy_roster.handle_event({
+        type = "BossMinionsAwakened",
+        wave = wave,
+        speed_multiplier = 2,
+        attack_speed_multiplier = 2,
+    })
+
+    publish(enemy_roster.drain_events())
+end
+
+local function respawn_boss_minion(event)
+    boss_minion_respawn_index = boss_minion_respawn_index + 1
+
+    local respawn_event = {
+        type = "EnemySpawnRequested",
+        wave = event.wave,
+        enemy_id = event.enemy_id,
+        spawn_index = 100000 + boss_minion_respawn_index,
+        spawn_group_id = "BossMinionRespawn",
+        target_player_id = event.target_player_id,
+        route_id = event.route_id,
+        spawn_scope = "PerPlayer",
+        is_boss = false,
+    }
+
+    enemy_roster.handle_event(respawn_event)
+    table.insert(pending_events, respawn_event)
+    route_enemy_events()
+end
+
+route_enemy_events = function()
+    local events = enemy_roster.drain_events()
+    local flow_snapshot = flow.get_snapshot()
+    local is_boss_battle = flow_snapshot.phase == "BossBattle"
+    local boss_minion_respawn_events = {}
+
+    for _, event in ipairs(events) do
+        if is_boss_battle
+            and event.type == "EnemyCreated"
+            and event.is_boss then
+            awaken_boss_minions(event.wave)
+        end
+
+        if event.type == "EnemyReachedEndpoint" then
+            if is_boss_battle and not event.is_boss then
+                -- Boss 波小怪漏怪不扣血；为了维持压力，漏掉后重新刷出。
+                table.insert(boss_minion_respawn_events, event)
+            elseif not event.is_boss
+                and event.is_joint_defense_transfer ~= true then
+                leak_resolver.handle_event(event)
+            end
+        elseif event.type == "EnemyDefeated"
+            and event.is_joint_defense_transfer then
+            leak_resolver.handle_event({
+                type = "LeakedEnemyRescued",
+                wave = event.wave,
+                enemy_instance_id = event.enemy_instance_id,
+            })
+        elseif is_boss_battle and event.type == "BossTransferRequested" then
+            schedule_boss_transfer(event)
+        end
+    end
+
+    publish(events)
+
+    for _, event in ipairs(boss_minion_respawn_events) do
+        respawn_boss_minion(event)
+    end
+
+end
+
 local function route_attack_events()
     local events = piece_attack_planner.drain_events()
 
     for _, event in ipairs(events) do
-        -- 攻击规划器只产生命令；敌人状态仍由 EnemyRoster 统一验证和修改。
-        enemy_roster.handle_event(event)
         table.insert(pending_events, event)
-        route_enemy_events()
+
+        if event.type == "EnemyDamageRequested" then
+            enemy_roster.handle_event(event)
+            route_enemy_events()
+        end
     end
 end
 
@@ -94,7 +344,6 @@ local function route_block_events()
     local events = block_resolver.drain_events()
 
     for _, event in ipairs(events) do
-        -- 阻挡关系由 BlockResolver 决定，再同时写入敌人与棋子权威状态。
         enemy_roster.handle_event(event)
         piece_roster.handle_event(event)
         table.insert(pending_events, event)
@@ -107,9 +356,14 @@ local function route_enemy_attack_events()
     local events = enemy_attack_planner.drain_events()
 
     for _, event in ipairs(events) do
-        piece_roster.handle_event(event)
         table.insert(pending_events, event)
-        route_piece_events()
+
+        if event.type == "BossSkillCast" then
+            enemy_roster.handle_event(event)
+        elseif event.type == "PieceDamageRequested" then
+            piece_roster.handle_event(event)
+            route_piece_events()
+        end
     end
 end
 
@@ -128,48 +382,264 @@ local function sell_temporary_reserve_pieces()
     route_player_events()
 end
 
-local function route_flow_events()
+local function resolve_personal_defense_leaks()
+    if not leak_resolver.resolve_wave() then
+        return false
+    end
+
+    route_leak_events()
+    return true
+end
+
+local function try_end_match_if_all_players_eliminated()
+    local flow_snapshot = flow.get_snapshot()
+
+    if flow_snapshot == nil or flow_snapshot.is_finished then
+        return false
+    end
+
+    if player_roster.get_alive_count() > 0 then
+        return false
+    end
+
+    if flow.end_match("Defeat") then
+        route_flow_events()
+        return true
+    end
+
+    return false
+end
+
+local function transfer_joint_defense_enemies(plan)
+    local transferred_count = 0
+
+    for _, leaking_player in ipairs(plan.leaking_players) do
+        for _, enemy_instance_id in ipairs(leaking_player.enemy_instance_ids) do
+            enemy_roster.handle_event({
+                type = "JointDefenseEnemyTransferRequested",
+                wave = plan.wave,
+                enemy_instance_id = enemy_instance_id,
+                defender_player_id = plan.defender_player_id,
+                leak_owner_player_id = leaking_player.player_id,
+            })
+            transferred_count = transferred_count + 1
+        end
+    end
+
+    route_enemy_events()
+    return transferred_count
+end
+
+local function count_joint_defense_enemies(plan)
+    local transferred_count = 0
+
+    for _, leaking_player in ipairs(plan.leaking_players) do
+        transferred_count =
+            transferred_count + #leaking_player.enemy_instance_ids
+    end
+
+    return transferred_count
+end
+
+local function start_pending_joint_defense()
+    if pending_joint_defense_plan == nil then
+        return
+    end
+
+    local plan = pending_joint_defense_plan
+    pending_joint_defense_plan = nil
+    transfer_joint_defense_enemies(plan)
+end
+
+local function try_begin_joint_defense()
+    local plan = leak_resolver.get_joint_defense_plan(
+        player_roster.get_alive_player_ids()
+    )
+
+    if not plan.is_available then
+        return false
+    end
+
+    if not flow.begin_joint_defense() then
+        return false
+    end
+
+    pending_joint_defense_plan = plan
+    route_flow_events()
+
+    table.insert(pending_events, {
+        type = "JointDefenseStarted",
+        wave = plan.wave,
+        defender_player_id = plan.defender_player_id,
+        leaking_player_count = #plan.leaking_players,
+        transferred_enemy_count = count_joint_defense_enemies(plan),
+    })
+    return true
+end
+
+local function handle_combat_timeout()
+    if not flow.is_phase_timeout() then
+        return false
+    end
+
+    local flow_snapshot = flow.get_snapshot()
+    if flow_snapshot.phase == "Battle" then
+        is_wave_spawn_completed = true
+        enemy_roster.handle_event({
+            type = "CombatTimeoutReached",
+            wave = flow_snapshot.wave,
+            phase = flow_snapshot.phase,
+        })
+        route_enemy_events()
+        try_complete_battle()
+        return true
+    end
+
+    if flow_snapshot.phase == "JointDefense" then
+        enemy_roster.handle_event({
+            type = "JointDefenseCleanupRequested",
+            wave = flow_snapshot.wave,
+        })
+        route_enemy_events()
+        if flow.complete_joint_defense() then
+            route_flow_events()
+        end
+        return true
+    end
+
+    if flow_snapshot.phase == "BossBattle" then
+        if flow.complete_boss("Defeat") then
+            route_flow_events()
+        end
+        return true
+    end
+
+    return false
+end
+
+function try_complete_battle()
+    local flow_snapshot = flow.get_snapshot()
+    if flow_snapshot.phase ~= "Battle"
+        and flow_snapshot.phase ~= "JointDefense"
+        and flow_snapshot.phase ~= "BossBattle" then
+        return
+    end
+
+    if flow_snapshot.phase == "JointDefense" then
+        if enemy_roster.get_alive_count() > 0 then
+            return
+        end
+
+        if flow.complete_joint_defense() then
+            route_flow_events()
+        end
+        return
+    end
+
+    if flow_snapshot.phase == "BossBattle" then
+        local boss_result = enemy_roster.get_boss_result(flow_snapshot.wave)
+        if boss_result == "Victory" then
+            if flow.complete_boss(boss_result) then
+                route_flow_events()
+            end
+        end
+        return
+    end
+
+    if not is_wave_spawn_completed then
+        return
+    end
+
+    if enemy_roster.get_alive_count() > 0 then
+        return
+    end
+
+    if try_begin_joint_defense() then
+        return
+    end
+
+    resolve_personal_defense_leaks()
+
+    if try_end_match_if_all_players_eliminated() then
+        return
+    end
+
+    if flow.complete_battle() then
+        route_flow_events()
+    end
+end
+
+route_flow_events = function()
     local events = flow.drain_events()
 
     for _, event in ipairs(events) do
         wave_spawner.handle_event(event)
         if event.type == "PhaseChanged" then
-            is_wave_spawn_completed = false
-
-            if event.phase == "Battle" then
-                leak_resolver.begin_wave(event.wave)
-            elseif event.phase == "Settlement" then
-                player_roster.grant_round_reward(event.wave)
-                route_player_events()
-
-                -- 结算免费刷新属于权威玩法规则；锁定商店会保留本轮商品。
-                local player_snapshot = player_roster.get_snapshot()
-                for _, player in ipairs(player_snapshot.players) do
-                    if player.status == "Alive" then
-                        shop_roster.refresh_if_unlocked(
-                            player.player_id,
-                            "Settlement"
-                        )
-                    end
-                end
-                route_shop_events()
-            elseif event.phase == "Preparation"
-                or event.phase == "BossPreparation" then
-                -- 每次进入新的准备阶段都重新收集玩家就绪意图。
-                player_roster.reset_ready()
-                route_player_events()
+            if event.phase == "Battle" or event.phase == "BossBattle" then
+                is_wave_spawn_completed = false
             end
 
-            local next_is_combat =
-                event.phase == "Battle"
-                or event.phase == "JointDefense"
-                or event.phase == "BossBattle"
+            if event.phase == "Battle" then
+                reset_boss_board_rotation()
+                leak_resolver.begin_wave(event.wave)
+            elseif event.phase == "JointDefense" then
+                start_pending_joint_defense()
+            elseif event.phase == "BossBattle" then
+                begin_boss_board_rotation()
+            elseif event.phase == "Settlement" then
+                reset_boss_board_rotation()
+                enemy_roster.handle_event({
+                    type = "JointDefenseCleanupRequested",
+                    wave = event.wave,
+                })
+                route_enemy_events()
+                resolve_personal_defense_leaks()
+
+                if player_roster.get_alive_count() > 0 then
+                    player_roster.grant_round_reward(event.wave)
+                    route_player_events()
+
+                    -- 回合结算后，存活玩家的未锁定商店自动刷新一次。
+                    local player_snapshot = player_roster.get_snapshot()
+                    for _, player in ipairs(player_snapshot.players) do
+                        if player.status == "Alive" then
+                            shop_roster.refresh_if_unlocked(
+                                player.player_id,
+                                "Settlement"
+                            )
+                        end
+                    end
+                    route_shop_events()
+                end
+            elseif event.phase == "Preparation"
+                or event.phase == "BossPreparation" then
+                reset_boss_board_rotation()
+                piece_roster.handle_event({
+                    type = "PreparationStarted",
+                    wave = event.wave,
+                })
+                route_piece_events()
+
+                -- 进入准备阶段时清空上一阶段的准备状态。
+                player_roster.reset_ready()
+                route_player_events()
+            else
+                reset_boss_board_rotation()
+            end
+
+            local next_is_combat = is_combat_lifecycle_phase(event.phase)
 
             if next_is_combat and not is_combat_active then
+                piece_roster.handle_event({
+                    type = "PreparationEnded",
+                    wave = event.wave,
+                })
+                route_piece_events()
+
                 -- 临时备战区只提供准备阶段处理机会，战斗开始时残留棋子统一出售。
                 sell_temporary_reserve_pieces()
 
-                -- 个人防守与未来联防共享同一战斗生命周期，联防开始不会让倒地棋子起身。
+                -- 个人防守、联防和 Boss 战共享同一战斗生命周期。
                 is_combat_active = true
                 piece_roster.begin_battle()
                 block_resolver.begin_battle()
@@ -186,8 +656,8 @@ local function route_flow_events()
             end
         end
     end
-    publish(events)
 
+    publish(events)
 end
 
 local function route_spawner_events()
@@ -195,9 +665,8 @@ local function route_spawner_events()
 
     for _, event in ipairs(events) do
         if event.type == "EnemySpawnRequested" then
-            -- 普通防守阶段每名存活玩家都获得同一波次的独立敌人。
-            -- 这里复制刷怪请求，而不是共享敌人实例，保证个人防区互不污染。
-            for _, player_id in ipairs(get_spawn_target_player_ids()) do
+            -- 普通敌人按玩家分别生成；共享 Boss 只生成到当前目标玩家棋盘。
+            for _, player_id in ipairs(get_spawn_target_player_ids(event)) do
                 local player_spawn_event = copy_event(event)
                 player_spawn_event.target_player_id = player_id
                 enemy_roster.handle_event(player_spawn_event)
@@ -216,62 +685,15 @@ local function route_spawner_events()
     end
 end
 
-local function resolve_personal_defense_leaks()
-    if not leak_resolver.resolve_wave() then
-        return
-    end
-
-    local events = leak_resolver.drain_events()
-
-    for _, event in ipairs(events) do
-        player_roster.handle_event(event)
-    end
-
-    publish(events)
-    publish(player_roster.drain_events())
-end
-
-local function try_complete_battle()
-    if not is_wave_spawn_completed then
-        return
-    end
-
-    if enemy_roster.get_alive_count() > 0 then
-        return
-    end
-
-    local flow_snapshot = flow.get_snapshot()
-    if flow_snapshot.phase == "BossBattle" then
-        local boss_result = enemy_roster.get_boss_result(flow_snapshot.wave)
-        if boss_result == nil then
-            error("Completed boss battle has no result")
-        end
-
-        if flow.complete_boss(boss_result) then
-            route_flow_events()
-        end
-        return
-    end
-
-    resolve_personal_defense_leaks()
-
-    if player_roster.get_alive_count() == 0 then
-        if flow.end_match("Defeat") then
-            route_flow_events()
-        end
-        return
-    end
-
-    if flow.complete_battle() then
-        route_flow_events()
-    end
-end
-
 function M.start(session_options)
-    -- 每次创建权威对局前验证地图与路线，避免错误配置运行到战斗中途才暴露。
+    -- 启动时校验棋盘路线与格子配置，尽早暴露配置错误。
     board_validator.validate(board)
     is_wave_spawn_completed = false
     is_combat_active = false
+    pending_joint_defense_plan = nil
+    pending_boss_transfer = nil
+    boss_minion_respawn_index = 0
+    reset_boss_board_rotation()
     pending_events = {}
     player_roster.start(session_options)
     shop_roster.start(session_options)
@@ -287,7 +709,6 @@ function M.start(session_options)
 
     route_flow_events()
     route_spawner_events()
-
 end
 
 function M.update(delta_time)
@@ -297,17 +718,41 @@ function M.update(delta_time)
 
     route_piece_events()
 
-    piece_roster.update(delta_time)
-    route_piece_events()
+    local phase_before_update = flow.get_snapshot().phase
+    local should_run_combat_simulation =
+        is_combat_simulation_phase(phase_before_update)
 
-    enemy_roster.update(delta_time)
-    route_enemy_events()
+    if should_run_combat_simulation then
+        piece_roster.update(delta_time)
+        route_piece_events()
+
+        enemy_roster.update(delta_time)
+        route_enemy_events()
+    end
 
     flow.update(delta_time)
     route_flow_events()
+    if try_end_match_if_all_players_eliminated() then
+        return
+    end
 
-    wave_spawner.update(delta_time)
-    route_spawner_events()
+    if handle_combat_timeout() then
+        return
+    end
+
+    local current_phase = flow.get_snapshot().phase
+    should_run_combat_simulation = is_combat_simulation_phase(current_phase)
+
+    if should_run_combat_simulation then
+        wave_spawner.update(delta_time)
+        route_spawner_events()
+        update_boss_board_rotation()
+        update_pending_boss_transfer(delta_time)
+    end
+
+    if not should_run_combat_simulation then
+        return
+    end
 
     block_resolver.update(
         delta_time,
@@ -316,7 +761,7 @@ function M.update(delta_time)
     )
     route_block_events()
 
-    -- 先完成移动和生成，再用该 Tick 的最新快照进行目标选择。
+    -- 先完成移动和生成，再用本 Tick 的最新快照选择攻击目标。
     piece_attack_planner.update(
         delta_time,
         piece_roster.get_snapshot(),
@@ -331,7 +776,7 @@ function M.update(delta_time)
     )
     route_enemy_attack_events()
 
-    -- 棋子可能在敌人攻击后倒地；同 Tick 释放阻挡，后续敌人才可继续前进。
+    -- 棋子可能在敌人攻击后倒地；同 Tick 再释放阻挡，后续敌人才能继续前进。
     block_resolver.update(
         0,
         piece_roster.get_snapshot(),
@@ -362,6 +807,19 @@ function M.grant_overflow_piece(player_id, piece_id)
     return instance_id
 end
 
+function M.debug_enter_boss_preparation()
+    if not is_started then
+        error("Session is not started")
+    end
+
+    if flow.debug_enter_boss_preparation() then
+        route_flow_events()
+        return true
+    end
+
+    return false
+end
+
 function M.handle_command(command)
     if not is_started then
         error("Session is not started")
@@ -377,7 +835,7 @@ function M.handle_command(command)
         or command.type == "ShopUpgradeRequested"
         or command.type == "ShopPurchaseRequested"
         or command.type == "PlayerReadyRequested" then
-        -- 部署、朝向和商店操作都只允许在准备阶段提交。
+        -- 操作型命令只允许在准备阶段执行。
         local phase = flow.get_snapshot().phase
         if phase ~= "Preparation" and phase ~= "BossPreparation" then
             error("Preparation command cannot execute outside Preparation")
@@ -388,7 +846,7 @@ function M.handle_command(command)
         player_roster.set_ready(command.player_id, command.is_ready)
         route_player_events()
 
-        -- 所有存活玩家均就绪时，权威阶段立即开始战斗。
+        -- 所有存活玩家准备完成后，立刻结束准备阶段。
         if player_roster.are_all_alive_players_ready()
             and flow.complete_preparation() then
             route_flow_events()
@@ -433,13 +891,19 @@ function M.handle_command(command)
     if command.type == "ShopPurchaseRequested" then
         local offer = shop_roster.get_offer(command.player_id, command.slot_index)
 
-        -- 先验证备战区空间，再扣费和锁定商品，保证购买命令失败时不产生部分状态。
+        -- 购买前先确认备战区容量，避免扣钱后无法放入棋子。
         if not piece_roster.can_grant_piece(command.player_id) then
             error("Bench capacity reached for player: " .. command.player_id)
         end
 
-        player_roster.spend_gold(command.player_id, offer.cost, "PiecePurchase")
-        local piece_id = shop_roster.purchase(command.player_id, command.slot_index)
+        local purchase_cost =
+            piece_roster.get_shop_purchase_cost(command.player_id, offer.cost)
+        player_roster.spend_gold(command.player_id, purchase_cost, "PiecePurchase")
+        local piece_id = shop_roster.purchase(
+            command.player_id,
+            command.slot_index,
+            purchase_cost
+        )
         local piece_instance_id = piece_roster.grant_piece(command.player_id, piece_id)
         route_player_events()
         route_shop_events()
@@ -487,7 +951,10 @@ function M.get_player_roster_snapshot()
 end
 
 function M.get_shop_snapshot(player_id)
-    return shop_roster.get_snapshot(player_id)
+    return shop_roster.get_snapshot(
+        player_id,
+        piece_roster.get_shop_purchase_discount(player_id)
+    )
 end
 
 function M.drain_events()
@@ -499,6 +966,10 @@ end
 function M.shutdown()
     is_wave_spawn_completed = false
     is_combat_active = false
+    pending_joint_defense_plan = nil
+    pending_boss_transfer = nil
+    boss_minion_respawn_index = 0
+    reset_boss_board_rotation()
     is_started = false
     flow.shutdown()
     wave_spawner.shutdown()

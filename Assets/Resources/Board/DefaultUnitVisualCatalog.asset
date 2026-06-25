@@ -13,8 +13,40 @@ MonoBehaviour:
   m_Name: DefaultUnitVisualCatalog
   m_EditorClassIdentifier:
   pieceEntries:
-  - unitId: Bramble
+  - unitId: magician_01
+    prefab: {fileID: 3711737751454774127, guid: f26d98c60e154a847abfe456738f6f60, type: 3}
+  - unitId: golden_soldier
     prefab: {fileID: 8173735527160158047, guid: 6a63f8ae9e4e1a94eac432c9521badca, type: 3}
+  - unitId: lx_soldier
+    prefab: {fileID: 5290262609086423087, guid: e35b61513ae6d35429c332f2719bf48f, type: 3}
+  - unitId: homeless
+    prefab: {fileID: 505102337488233336, guid: 9096f01259bbc7748bb8319a84e885de, type: 3}
+  - unitId: golden_archer
+    prefab: {fileID: 3656451232707706794, guid: de4c0ecf51614034d944fcddf1d3a0bc, type: 3}
+  - unitId: kaliya_knight
+    prefab: {fileID: 4038530984157857710, guid: dc2fb863aefaad048bff853ae810136e, type: 3}
+  - unitId: ronglu_sword
+    prefab: {fileID: 7408320788481683734, guid: aaaf48f6191144c4091e5b830414e861, type: 3}
+  - unitId: ronglu_tree
+    prefab: {fileID: 6718447941999662980, guid: 567f29c299f512f4ea5c10c469631ed9, type: 3}
+  - unitId: xiaoge
+    prefab: {fileID: 2895622397538285940, guid: cb705d9d5761e9b43ad007ef2d36de8c, type: 3}
+  - unitId: laoge
+    prefab: {fileID: 2249238678681528281, guid: 4c2cd18b9feb9824d9eace4923b095a2, type: 3}
+  - unitId: gangzi
+    prefab: {fileID: 1157180071689645636, guid: e7cfc609f614e8a4a9a6607515ebd629, type: 3}
   enemyEntries:
   - unitId: Crab
     prefab: {fileID: 961769176002874590, guid: ba065447c18b5464480736e22078188d, type: 3}
+  - unitId: Mouse
+    prefab: {fileID: 5875727551749452950, guid: 67c7cc3a28d78d141a89cdf7b6c702e5, type: 3}
+  - unitId: Demi_Human
+    prefab: {fileID: 7987567354157067588, guid: df3eda51ce594554ca0a23a451371df6, type: 3}
+  - unitId: Noxus
+    prefab: {fileID: 6502825818027544995, guid: 38e7877fac63bcb4b9fa1aea5553e956, type: 3}
+  - unitId: Mysterious_Goat
+    prefab: {fileID: 7534361707867251485, guid: 8e86c0ba1c240584099c327160a948db, type: 3}
+  - unitId: Goat
+    prefab: {fileID: 7518587206539118235, guid: a7a719d11dc49114cbb231480c00d6f5, type: 3}
+  - unitId: Sheep
+    prefab: {fileID: 2384580131277538535, guid: 52a17278f4a24ca44bc1a05d530f71f9, type: 3}

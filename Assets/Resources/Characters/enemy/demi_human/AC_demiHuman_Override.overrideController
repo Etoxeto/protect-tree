@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!221 &22100000
+AnimatorOverrideController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: AC_demiHuman_Override
+  m_Controller: {fileID: 9100000, guid: 752148d6dbf50f34ca7e04d9f87a072f, type: 2}
+  m_Clips:
+  - m_OriginalClip: {fileID: 7400000, guid: 99866a2591c8b994da3e462891975f9d, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 36abb4dee007aa74e8d8fa00e8b767d3, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 7fd61c56794a2024fb2c7028329a50bb, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 84598f49d74c19542983cd4adebb170f, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 97e1faa77ce7d234898703b318ee47d8, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: d731056bab0e00a4dbba1be04aa43589, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 47ac18e0d5137fc4abbccb4f1fb7382d, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 4f44e2ec41c501642b1eb70dfeff1a76, type: 2}

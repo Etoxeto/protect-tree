@@ -172,7 +172,7 @@ namespace ProtectTree.Runtime.Presentation
                 hasActiveSynergy = true;
                 label += $"    {synergy.SynergyId} Lv.{synergy.Level} "
                     + $"{synergy.UniquePieceCount}/{synergy.RequiredUniquePieces} "
-                    + $"+{synergy.DamageBonus} damage";
+                    + synergy.EffectDescription;
             }
 
             return hasActiveSynergy ? label : label + "    None";

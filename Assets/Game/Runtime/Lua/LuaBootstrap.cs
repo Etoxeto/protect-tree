@@ -1,4 +1,5 @@
 using UnityEngine;
+using ProtectTree.Runtime.Network;
 
 namespace ProtectTree.Runtime.Lua
 {
@@ -13,6 +14,7 @@ namespace ProtectTree.Runtime.Lua
         private string reloadModule = "Bootstrap.LifecycleDemo";
 
         private LuaRuntime _runtime;
+        private bool _loggedLanClientTickPaused;
 
         public LuaRuntime Runtime => _runtime;
 
@@ -23,7 +25,25 @@ namespace ProtectTree.Runtime.Lua
 
         private void Update()
         {
-            _runtime?.Tick(Time.deltaTime);
+            if (_runtime == null)
+            {
+                return;
+            }
+
+            if (ShouldPauseLocalSimulationForLanClient())
+            {
+                if (!_loggedLanClientTickPaused)
+                {
+                    Debug.Log(
+                        "[ProtectTree][LAN Match] Local Lua simulation tick paused on Client; authoritative snapshots drive gameplay.",
+                        this);
+                    _loggedLanClientTickPaused = true;
+                }
+
+                return;
+            }
+
+            _runtime.Tick(Time.deltaTime);
         }
 
         private void OnDestroy()
@@ -56,6 +76,12 @@ namespace ProtectTree.Runtime.Lua
             }
 
             Debug.Log($"[ProtectTree][XLua] Started entry module: {entryModule}", this);
+        }
+
+        private static bool ShouldPauseLocalSimulationForLanClient()
+        {
+            LanMatchRuntime lanMatch = LanMatchRuntime.Instance;
+            return lanMatch != null && lanMatch.IsActive && lanMatch.IsClient;
         }
 
         private static void ApplyStartupOptions(LuaRuntime runtime)

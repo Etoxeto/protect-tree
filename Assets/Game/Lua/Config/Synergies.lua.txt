@@ -1,44 +1,124 @@
 return {
     order = {
-        "Arcane",
+        "College",
         "Golden",
         "Storm",
-        "Sun",
+        "Furnace",
+        "Knight",
+        "Lord",
+        "MagicPower"
+
     },
     definitions = {
-        Arcane = {
-            display_name = "奥术",
+        College = {
+            display_name = "学院",
+            layer_effect = {
+                type = "ShopPurchaseDiscount",
+                thresholds = {
+                    { layers_above = 50, discount = 1 },
+                    { layers_above = 100, discount = 2 },
+                },
+            },
             levels = {
                 {
                     required_unique_pieces = 2,
-                    damage_bonus = 3,
+                    damage_bonus = 0,
                 },
             },
         },
         Golden = {
             display_name = "黄金",
+            layer_effect = {
+                type = "AttackPercentForSynergy",
+                base_percent = 10,
+                layers_per_percent = 2,
+                percent_per_step = 1,
+            },
             levels = {
                 {
                     required_unique_pieces = 2,
-                    damage_bonus = 2,
+                    damage_bonus = 0,
                 },
             },
         },
         Storm = {
             display_name = "风暴",
+            layer_effect = {
+                type = "StormWhirlwind",
+                chance_at_zero_layers = 10,
+                chance_at_full_layers = 100,
+                full_layers = 200,
+                base_damage = 5,
+                damage_layers_per_step = 10,
+                damage_per_step = 1,
+            },
             levels = {
                 {
                     required_unique_pieces = 2,
-                    damage_bonus = 2,
+                    damage_bonus = 0,
                 },
             },
         },
-        Sun = {
-            display_name = "太阳",
+        Furnace = {
+            display_name = "熔炉",
+            layer_effect = {
+                type = "HealthPercentForAll",
+                base_percent = 10,
+                layers_per_percent = 2,
+                percent_per_step = 1,
+            },
             levels = {
                 {
                     required_unique_pieces = 2,
-                    damage_bonus = 2,
+                    damage_bonus = 0,
+                },
+            },
+        },
+        Knight = {
+            display_name = "骑士",
+            layer_effect = {
+                type = "AttackAndHealthPercentForSynergy",
+                base_percent = 10,
+                layers_per_percent = 2,
+                percent_per_step = 1,
+            },
+            levels = {
+                {
+                    required_unique_pieces = 2,
+                    damage_bonus = 0,
+                },
+            },
+        },
+        Lord = {
+            display_name = "君王",
+            exact_unique_pieces = 1,
+            allow_layers = false,
+            layer_effect = {
+                type = "AttackAndHealthPercentForAll",
+                percent = 10,
+            },
+            levels = {
+                {
+                    required_unique_pieces = 1,
+                    damage_bonus = 0,
+                },
+            },
+        },
+        MagicPower = {
+            display_name = "魔力",
+            layer_effect = {
+                type = "MagicSword",
+                base_interval_seconds = 15,
+                interval_reduction_layers = 10,
+                minimum_interval_seconds = 1,
+                base_damage = 6,
+                damage_layers_per_step = 10,
+                damage_per_step = 1,
+            },
+            levels = {
+                {
+                    required_unique_pieces = 2,
+                    damage_bonus = 0,
                 },
             },
         },

@@ -1,11 +1,26 @@
 local M = {}
 local piece_configs = require("Config.Pieces")
+local synergy_configs = require("Config.Synergies")
+local board = require("Config.Board")
 local board_queries = require("Match.BoardQueries")
 
 local current_wave = 0
+local DefaultAttackImpactDelaySeconds = 0.2
+local AttackTypeSingle = "Single"
+local AttackTypeArea = "Area"
 local is_active = false
 local seconds_until_attack_by_piece_id = {}
+local seconds_until_magic_by_piece_id = {}
+local attack_count_by_piece_id = {}
+local pending_attack_impacts = {}
 local pending_events = {}
+
+local facing_vectors = {
+    Up = { x = 0, y = 1 },
+    Right = { x = 1, y = 0 },
+    Down = { x = 0, y = -1 },
+    Left = { x = -1, y = 0 },
+}
 
 local function require_positive_integer(value, field_name)
     if type(value) ~= "number"
@@ -33,11 +48,168 @@ local function reset()
     current_wave = 0
     is_active = false
     seconds_until_attack_by_piece_id = {}
+    seconds_until_magic_by_piece_id = {}
+    attack_count_by_piece_id = {}
+    pending_attack_impacts = {}
     pending_events = {}
 end
 
-local function find_target(piece, enemies)
-    local selected = nil
+local function piece_has_synergy(piece, synergy_id)
+    local config = piece_configs[piece.piece_id]
+    if config == nil or type(config.synergies) ~= "table" then
+        return false
+    end
+
+    for _, configured_synergy_id in ipairs(config.synergies) do
+        if configured_synergy_id == synergy_id then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function get_active_synergy(piece_snapshot, player_id, synergy_id)
+    for _, synergy in ipairs(piece_snapshot.active_synergies or {}) do
+        if synergy.player_id == player_id and synergy.synergy_id == synergy_id then
+            return synergy
+        end
+    end
+
+    return nil
+end
+
+local function get_layer_damage(layer_effect, layer_count)
+    local base_damage = layer_effect.base_damage or 1
+    local layers_per_step = layer_effect.damage_layers_per_step or 10
+    local damage_per_step = layer_effect.damage_per_step or 1
+
+    return base_damage
+        + math.floor(layer_count / layers_per_step) * damage_per_step
+end
+
+local function get_storm_chance(layer_effect, layer_count)
+    local start_chance = layer_effect.chance_at_zero_layers or 10
+    local full_chance = layer_effect.chance_at_full_layers or 100
+    local full_layers = layer_effect.full_layers or 200
+    local clamped_layers = math.min(layer_count, full_layers)
+
+    return math.floor(
+        start_chance
+        + (full_chance - start_chance) * clamped_layers / full_layers
+    )
+end
+
+local function get_magic_interval(layer_effect, layer_count)
+    local base_interval = layer_effect.base_interval_seconds or 15
+    local reduction_layers = layer_effect.interval_reduction_layers or 10
+    local minimum_interval = layer_effect.minimum_interval_seconds or 1
+    local reduction = math.floor(layer_count / reduction_layers)
+
+    return math.max(minimum_interval, base_interval - reduction)
+end
+
+local function find_cell_by_grid(grid_x, grid_y)
+    for _, cell in pairs(board.cells) do
+        if cell.grid_x == grid_x and cell.grid_y == grid_y then
+            return cell
+        end
+    end
+
+    return nil
+end
+
+local function find_nearest_route_sample(enemy)
+    local route = board.routes[enemy.route_id]
+    if route == nil then
+        return nil
+    end
+
+    local nearest_sample = nil
+    local nearest_distance = nil
+
+    for _, sample in ipairs(route.samples) do
+        local distance = math.abs(sample.path_progress - enemy.path_progress)
+        if nearest_sample == nil or distance < nearest_distance then
+            nearest_sample = sample
+            nearest_distance = distance
+        end
+    end
+
+    return nearest_sample
+end
+
+local function is_enemy_on_grid(enemy, grid_x, grid_y)
+    local sample = find_nearest_route_sample(enemy)
+    return sample ~= nil
+        and sample.grid_x == grid_x
+        and sample.grid_y == grid_y
+end
+
+local function create_damage_event(piece, enemy, damage, projectile_id)
+    local event = {
+        type = "EnemyDamageRequested",
+        wave = current_wave,
+        enemy_instance_id = enemy.instance_id,
+        source_piece_instance_id = piece.instance_id,
+        damage = damage,
+    }
+
+    if projectile_id ~= nil then
+        event.projectile_id = projectile_id
+    end
+
+    return event
+end
+
+local function create_attack_started_event(piece, enemy)
+    return {
+        type = "PieceAttackStarted",
+        wave = current_wave,
+        enemy_instance_id = enemy.instance_id,
+        source_piece_instance_id = piece.instance_id,
+    }
+end
+
+local function get_attack_impact_delay(piece)
+    local config = piece_configs[piece.piece_id] or {}
+    local delay = config.attack_impact_delay_seconds
+    if delay == nil then
+        return DefaultAttackImpactDelaySeconds
+    end
+
+    require_non_negative_number(delay, "attack_impact_delay_seconds")
+    return delay
+end
+
+local function get_attack_type(piece)
+    local config = piece_configs[piece.piece_id] or {}
+    local attack_type = config.attack_type or AttackTypeSingle
+    if attack_type ~= AttackTypeSingle and attack_type ~= AttackTypeArea then
+        error("Invalid piece attack_type: " .. tostring(attack_type))
+    end
+
+    return attack_type
+end
+
+local function schedule_attack_impact(piece, targets)
+    if targets == nil or #targets == 0 then
+        return
+    end
+
+    local primary_target = targets[1]
+    table.insert(pending_events, create_attack_started_event(piece, primary_target))
+    table.insert(pending_attack_impacts, {
+        seconds_remaining = get_attack_impact_delay(piece),
+        source_piece_instance_id = piece.instance_id,
+        target_enemy_instance_id = primary_target.instance_id,
+        attack_type = get_attack_type(piece),
+        damage = piece.damage,
+    })
+end
+
+local function find_targets(piece, enemies)
+    local targets = {}
     local blocked_enemy_ids = {}
 
     for _, enemy_instance_id in ipairs(piece.blocked_enemy_instance_ids) do
@@ -56,33 +228,267 @@ local function find_target(piece, enemies)
             )
 
         if is_valid then
-            local enemy_is_blocked = blocked_enemy_ids[enemy.instance_id] == true
-            local selected_is_blocked =
-                selected ~= nil
-                and blocked_enemy_ids[selected.instance_id] == true
+            table.insert(targets, enemy)
+        end
+    end
 
-            -- 目标选择必须完全确定：优先攻击自己阻挡的敌人，
-            -- 其次选择最接近终点者，进度相同再按实例 ID 决定。
-            local is_better =
-                selected == nil
-                or (enemy_is_blocked and not selected_is_blocked)
-                or (
-                    enemy_is_blocked == selected_is_blocked
-                    and enemy.path_progress > selected.path_progress
-                )
-                or (
-                    enemy_is_blocked == selected_is_blocked
-                    and enemy.path_progress == selected.path_progress
-                    and enemy.instance_id < selected.instance_id
-                )
+    table.sort(targets, function(left, right)
+        local left_is_blocked = blocked_enemy_ids[left.instance_id] == true
+        local right_is_blocked = blocked_enemy_ids[right.instance_id] == true
 
-            if is_better then
-                selected = enemy
+        if left_is_blocked ~= right_is_blocked then
+            return left_is_blocked
+        end
+
+        if left.path_progress ~= right.path_progress then
+            return left.path_progress > right.path_progress
+        end
+
+        return left.instance_id < right.instance_id
+    end)
+
+    if get_attack_type(piece) == AttackTypeSingle and #targets > 1 then
+        return { targets[1] }
+    end
+
+    return targets
+end
+
+local function find_piece(piece_snapshot, piece_instance_id)
+    for _, piece in ipairs(piece_snapshot.pieces) do
+        if piece.instance_id == piece_instance_id then
+            return piece
+        end
+    end
+
+    return nil
+end
+
+local function find_enemy(enemy_snapshot, enemy_instance_id)
+    for _, enemy in ipairs(enemy_snapshot.enemies) do
+        if enemy.instance_id == enemy_instance_id then
+            return enemy
+        end
+    end
+
+    return nil
+end
+
+local function can_resolve_attack_impact(piece, enemy)
+    if piece == nil
+        or enemy == nil
+        or piece.location ~= "Board"
+        or piece.status ~= "Active"
+        or enemy.status ~= "Alive"
+        or enemy.wave ~= current_wave
+        or enemy.target_player_id ~= piece.owner_player_id then
+        return false
+    end
+
+    local config = piece_configs[piece.piece_id]
+    return config ~= nil
+        and board_queries.is_enemy_in_attack_range(
+            piece,
+            enemy,
+            config.attack_range
+        )
+end
+
+local function find_nearest_enemy(piece, enemies)
+    local piece_cell = board.cells[piece.cell_id]
+    if piece_cell == nil then
+        return nil
+    end
+
+    local selected = nil
+    local selected_distance = nil
+
+    for _, enemy in ipairs(enemies) do
+        if enemy.status == "Alive"
+            and enemy.wave == current_wave
+            and enemy.target_player_id == piece.owner_player_id then
+            local sample = find_nearest_route_sample(enemy)
+            if sample ~= nil then
+                local distance =
+                    math.abs(sample.grid_x - piece_cell.grid_x)
+                    + math.abs(sample.grid_y - piece_cell.grid_y)
+                local is_better =
+                    selected == nil
+                    or distance < selected_distance
+                    or (
+                        distance == selected_distance
+                        and enemy.path_progress > selected.path_progress
+                    )
+                    or (
+                        distance == selected_distance
+                        and enemy.path_progress == selected.path_progress
+                        and enemy.instance_id < selected.instance_id
+                    )
+
+                if is_better then
+                    selected = enemy
+                    selected_distance = distance
+                end
             end
         end
     end
 
     return selected
+end
+
+local function try_emit_storm_whirlwind(piece, target, piece_snapshot, enemies)
+    if not piece_has_synergy(piece, "Storm") then
+        return
+    end
+
+    local synergy =
+        get_active_synergy(piece_snapshot, piece.owner_player_id, "Storm")
+    if synergy == nil then
+        return
+    end
+
+    local layer_effect = synergy_configs.definitions.Storm.layer_effect
+    local chance = get_storm_chance(layer_effect, synergy.layer_count)
+    local attack_count = (attack_count_by_piece_id[piece.instance_id] or 0) + 1
+    attack_count_by_piece_id[piece.instance_id] = attack_count
+
+    local roll =
+        (
+            current_wave * 97
+            + piece.instance_id * 31
+            + target.instance_id * 17
+            + attack_count * 13
+        ) % 100 + 1
+    if roll > chance then
+        return
+    end
+
+    local origin_cell = board.cells[piece.cell_id]
+    local forward = facing_vectors[piece.facing]
+    if origin_cell == nil or forward == nil then
+        return
+    end
+
+    local damage = get_layer_damage(layer_effect, synergy.layer_count)
+    local hit_enemy_ids = {}
+    local max_steps = math.max(board.width, board.height)
+
+    for step = 1, max_steps do
+        local grid_x = origin_cell.grid_x + forward.x * step
+        local grid_y = origin_cell.grid_y + forward.y * step
+        local cell = find_cell_by_grid(grid_x, grid_y)
+        if cell == nil then
+            break
+        end
+
+        if cell.terrain ~= "Ground" then
+            break
+        end
+
+        for _, enemy in ipairs(enemies) do
+            if enemy.status == "Alive"
+                and enemy.wave == current_wave
+                and enemy.target_player_id == piece.owner_player_id
+                and hit_enemy_ids[enemy.instance_id] ~= true
+                and is_enemy_on_grid(enemy, grid_x, grid_y) then
+                table.insert(
+                    pending_events,
+                    create_damage_event(piece, enemy, damage, "Storm")
+                )
+                hit_enemy_ids[enemy.instance_id] = true
+            end
+        end
+    end
+end
+
+local function update_pending_attack_impacts(
+    delta_time,
+    piece_snapshot,
+    enemy_snapshot
+)
+    local remaining_impacts = {}
+
+    for _, impact in ipairs(pending_attack_impacts) do
+        impact.seconds_remaining = impact.seconds_remaining - delta_time
+
+        if impact.seconds_remaining <= 0 then
+            local piece =
+                find_piece(piece_snapshot, impact.source_piece_instance_id)
+            local targets = {}
+            if piece ~= nil and impact.attack_type == AttackTypeArea then
+                targets = find_targets(piece, enemy_snapshot.enemies)
+            else
+                local enemy =
+                    find_enemy(enemy_snapshot, impact.target_enemy_instance_id)
+                if enemy ~= nil then
+                    table.insert(targets, enemy)
+                end
+            end
+
+            local did_emit_storm = false
+            for _, enemy in ipairs(targets) do
+                if can_resolve_attack_impact(piece, enemy) then
+                    table.insert(
+                        pending_events,
+                        create_damage_event(piece, enemy, impact.damage, nil)
+                    )
+                    if not did_emit_storm then
+                        try_emit_storm_whirlwind(
+                            piece,
+                            enemy,
+                            piece_snapshot,
+                            enemy_snapshot.enemies
+                        )
+                        did_emit_storm = true
+                    end
+                end
+            end
+        else
+            table.insert(remaining_impacts, impact)
+        end
+    end
+
+    pending_attack_impacts = remaining_impacts
+end
+
+local function update_magic_sword(delta_time, piece, piece_snapshot, enemies)
+    if not piece_has_synergy(piece, "MagicPower") then
+        seconds_until_magic_by_piece_id[piece.instance_id] = nil
+        return
+    end
+
+    local synergy =
+        get_active_synergy(piece_snapshot, piece.owner_player_id, "MagicPower")
+    if synergy == nil then
+        seconds_until_magic_by_piece_id[piece.instance_id] = nil
+        return
+    end
+
+    local layer_effect = synergy_configs.definitions.MagicPower.layer_effect
+    local interval = get_magic_interval(layer_effect, synergy.layer_count)
+    local seconds_until_magic =
+        seconds_until_magic_by_piece_id[piece.instance_id] or interval
+
+    seconds_until_magic = seconds_until_magic - delta_time
+    if seconds_until_magic <= 0 then
+        local target = find_nearest_enemy(piece, enemies)
+        if target == nil then
+            seconds_until_magic = 0
+        else
+            table.insert(
+                pending_events,
+                create_damage_event(
+                    piece,
+                    target,
+                    get_layer_damage(layer_effect, synergy.layer_count),
+                    "MagicPower"
+                )
+            )
+            seconds_until_magic = seconds_until_magic + interval
+        end
+    end
+
+    seconds_until_magic_by_piece_id[piece.instance_id] = seconds_until_magic
 end
 
 function M.start()
@@ -102,14 +508,18 @@ function M.begin_battle(wave)
 
     current_wave = wave
     is_active = true
-
-    -- 每轮战斗重新开始计时，使已经部署的棋子在首个战斗 Tick 可立即攻击。
     seconds_until_attack_by_piece_id = {}
+    seconds_until_magic_by_piece_id = {}
+    attack_count_by_piece_id = {}
+    pending_attack_impacts = {}
 end
 
 function M.end_battle()
     is_active = false
     seconds_until_attack_by_piece_id = {}
+    seconds_until_magic_by_piece_id = {}
+    attack_count_by_piece_id = {}
+    pending_attack_impacts = {}
 end
 
 function M.update(delta_time, piece_snapshot, enemy_snapshot)
@@ -118,10 +528,12 @@ function M.update(delta_time, piece_snapshot, enemy_snapshot)
     end
 
     require_non_negative_number(delta_time, "delta_time")
+    update_pending_attack_impacts(delta_time, piece_snapshot, enemy_snapshot)
 
     for _, piece in ipairs(piece_snapshot.pieces) do
         if piece.location ~= "Board" or piece.status ~= "Active" then
             seconds_until_attack_by_piece_id[piece.instance_id] = nil
+            seconds_until_magic_by_piece_id[piece.instance_id] = nil
         else
             local seconds_until_attack =
                 seconds_until_attack_by_piece_id[piece.instance_id] or 0
@@ -129,21 +541,12 @@ function M.update(delta_time, piece_snapshot, enemy_snapshot)
             seconds_until_attack = seconds_until_attack - delta_time
 
             if seconds_until_attack <= 0 then
-                local target = find_target(piece, enemy_snapshot.enemies)
+                local targets = find_targets(piece, enemy_snapshot.enemies)
 
-                if target == nil then
-                    -- 没有敌人时保持就绪，敌人出现后的首个 Tick 即可攻击。
+                if #targets == 0 then
                     seconds_until_attack = 0
                 else
-                    table.insert(pending_events, {
-                        type = "EnemyDamageRequested",
-                        wave = current_wave,
-                        enemy_instance_id = target.instance_id,
-                        source_piece_instance_id = piece.instance_id,
-                        damage = piece.damage,
-                    })
-
-                    -- 将本 Tick 超出的时间带入下一次冷却，避免固定步长造成攻速漂移。
+                    schedule_attack_impact(piece, targets)
                     seconds_until_attack =
                         seconds_until_attack + piece.attack_interval_seconds
                 end
@@ -151,6 +554,13 @@ function M.update(delta_time, piece_snapshot, enemy_snapshot)
 
             seconds_until_attack_by_piece_id[piece.instance_id] =
                 seconds_until_attack
+
+            update_magic_sword(
+                delta_time,
+                piece,
+                piece_snapshot,
+                enemy_snapshot.enemies
+            )
         end
     end
 end

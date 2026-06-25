@@ -1921,8 +1921,26 @@ namespace ProtectTree.Runtime.Tests
                 try
                 {
                     Assert.That(firstAttackEvents.Length, Is.EqualTo(1));
-                    AssertEnemyDamageRequested(
+                    AssertPieceAttackStarted(
                         firstAttackEvents,
+                        index: 1,
+                        expectedWave: 1,
+                        expectedEnemyInstanceId: 1,
+                        expectedSourcePieceInstanceId: 1);
+                }
+                finally
+                {
+                    firstAttackEvents.Dispose();
+                }
+
+                UpdatePieceAttackPlanner(planner, pieceRoster, enemyRoster, 0.5d);
+                LuaTable delayedDamageEvents =
+                    CallModuleTableFunction(planner, "drain_events");
+                try
+                {
+                    Assert.That(delayedDamageEvents.Length, Is.EqualTo(1));
+                    AssertEnemyDamageRequested(
+                        delayedDamageEvents,
                         index: 1,
                         expectedWave: 1,
                         expectedEnemyInstanceId: 1,
@@ -1931,18 +1949,7 @@ namespace ProtectTree.Runtime.Tests
                 }
                 finally
                 {
-                    firstAttackEvents.Dispose();
-                }
-
-                UpdatePieceAttackPlanner(planner, pieceRoster, enemyRoster, 0.5d);
-                LuaTable coolingDownEvents = CallModuleTableFunction(planner, "drain_events");
-                try
-                {
-                    Assert.That(coolingDownEvents.Length, Is.Zero);
-                }
-                finally
-                {
-                    coolingDownEvents.Dispose();
+                    delayedDamageEvents.Dispose();
                 }
 
                 HandleEnemyDamageRequested(
@@ -1956,12 +1963,31 @@ namespace ProtectTree.Runtime.Tests
                 CallModuleFunction(enemyRoster, "update", 1.6d);
 
                 UpdatePieceAttackPlanner(planner, pieceRoster, enemyRoster, 0.5d);
-                LuaTable retargetedEvents = CallModuleTableFunction(planner, "drain_events");
+                LuaTable retargetedStartEvents =
+                    CallModuleTableFunction(planner, "drain_events");
                 try
                 {
-                    Assert.That(retargetedEvents.Length, Is.EqualTo(1));
+                    Assert.That(retargetedStartEvents.Length, Is.EqualTo(1));
+                    AssertPieceAttackStarted(
+                        retargetedStartEvents,
+                        index: 1,
+                        expectedWave: 1,
+                        expectedEnemyInstanceId: 2,
+                        expectedSourcePieceInstanceId: 1);
+                }
+                finally
+                {
+                    retargetedStartEvents.Dispose();
+                }
+
+                UpdatePieceAttackPlanner(planner, pieceRoster, enemyRoster, 0.35d);
+                LuaTable retargetedDamageEvents =
+                    CallModuleTableFunction(planner, "drain_events");
+                try
+                {
+                    Assert.That(retargetedDamageEvents.Length, Is.EqualTo(1));
                     AssertEnemyDamageRequested(
-                        retargetedEvents,
+                        retargetedDamageEvents,
                         index: 1,
                         expectedWave: 1,
                         expectedEnemyInstanceId: 2,
@@ -1970,7 +1996,7 @@ namespace ProtectTree.Runtime.Tests
                 }
                 finally
                 {
-                    retargetedEvents.Dispose();
+                    retargetedDamageEvents.Dispose();
                 }
 
                 CallModuleFunction(planner, "end_battle");
@@ -2066,8 +2092,25 @@ namespace ProtectTree.Runtime.Tests
                 try
                 {
                     Assert.That(attackEvents.Length, Is.EqualTo(1));
-                    AssertEnemyDamageRequested(
+                    AssertPieceAttackStarted(
                         attackEvents,
+                        1,
+                        expectedWave: 1,
+                        expectedEnemyInstanceId: 1,
+                        expectedSourcePieceInstanceId: 1);
+                }
+                finally
+                {
+                    attackEvents.Dispose();
+                }
+
+                UpdatePieceAttackPlanner(planner, pieceRoster, enemyRoster, 0.35d);
+                LuaTable damageEvents = CallModuleTableFunction(planner, "drain_events");
+                try
+                {
+                    Assert.That(damageEvents.Length, Is.EqualTo(1));
+                    AssertEnemyDamageRequested(
+                        damageEvents,
                         1,
                         expectedWave: 1,
                         expectedEnemyInstanceId: 1,
@@ -2076,7 +2119,7 @@ namespace ProtectTree.Runtime.Tests
                 }
                 finally
                 {
-                    attackEvents.Dispose();
+                    damageEvents.Dispose();
                 }
             }
             finally
@@ -2234,13 +2277,11 @@ namespace ProtectTree.Runtime.Tests
                     {
                         Assert.That(
                             attackEvent.Get<string>("type"),
-                            Is.EqualTo("PieceDamageRequested"));
+                            Is.EqualTo("EnemyAttackStarted"));
                         Assert.That(attackEvent.Get<int>("piece_instance_id"), Is.EqualTo(1));
                         Assert.That(
                             attackEvent.Get<int>("source_enemy_instance_id"),
                             Is.EqualTo(1));
-                        Assert.That(attackEvent.Get<int>("damage"), Is.EqualTo(3));
-                        CallModuleFunction(pieceRoster, "handle_event", attackEvent);
                     }
                     finally
                     {
@@ -2250,6 +2291,39 @@ namespace ProtectTree.Runtime.Tests
                 finally
                 {
                     attackEvents.Dispose();
+                }
+
+                UpdateEnemyAttackPlanner(
+                    enemyAttackPlanner,
+                    pieceRoster,
+                    enemyRoster,
+                    0.35d);
+                LuaTable damageEvents =
+                    CallModuleTableFunction(enemyAttackPlanner, "drain_events");
+                try
+                {
+                    Assert.That(damageEvents.Length, Is.EqualTo(1));
+                    LuaTable damageEvent = damageEvents.Get<int, LuaTable>(1);
+                    try
+                    {
+                        Assert.That(
+                            damageEvent.Get<string>("type"),
+                            Is.EqualTo("PieceDamageRequested"));
+                        Assert.That(damageEvent.Get<int>("piece_instance_id"), Is.EqualTo(1));
+                        Assert.That(
+                            damageEvent.Get<int>("source_enemy_instance_id"),
+                            Is.EqualTo(1));
+                        Assert.That(damageEvent.Get<int>("damage"), Is.EqualTo(3));
+                        CallModuleFunction(pieceRoster, "handle_event", damageEvent);
+                    }
+                    finally
+                    {
+                        damageEvent.Dispose();
+                    }
+                }
+                finally
+                {
+                    damageEvents.Dispose();
                 }
 
                 AssertSinglePieceCombatSnapshot(
@@ -2541,29 +2615,40 @@ namespace ProtectTree.Runtime.Tests
                 LuaTable events = CallModuleTableFunction(session, "drain_events");
                 try
                 {
-                    Assert.That(events.Length, Is.EqualTo(11));
+                    Assert.That(events.Length, Is.EqualTo(13));
                     AssertLuaEventTypeCount(events, "PieceGranted", 1);
                     AssertLuaEventTypeCount(events, "PieceDeployed", 1);
                     AssertLuaEventTypeCount(events, "PhaseChanged", 1);
                     AssertLuaEventTypeCount(events, "EnemySpawnRequested", 2);
                     AssertLuaEventTypeCount(events, "EnemyCreated", 2);
+                    AssertLuaEventTypeCount(events, "PieceAttackStarted", 2);
                     AssertLuaEventTypeCount(events, "EnemyDamageRequested", 2);
                     AssertLuaEventTypeCount(events, "EnemyDamaged", 2);
 
                     int firstCreatedIndex =
                         FindLuaEventIndex(events, "EnemyCreated", occurrence: 1);
+                    int firstAttackStartedIndex =
+                        FindLuaEventIndex(events, "PieceAttackStarted", occurrence: 1);
                     int firstDamageRequestIndex =
                         FindLuaEventIndex(events, "EnemyDamageRequested", occurrence: 1);
                     int firstDamagedIndex =
                         FindLuaEventIndex(events, "EnemyDamaged", occurrence: 1);
+                    int secondAttackStartedIndex =
+                        FindLuaEventIndex(events, "PieceAttackStarted", occurrence: 2);
                     int secondDamageRequestIndex =
                         FindLuaEventIndex(events, "EnemyDamageRequested", occurrence: 2);
                     int secondDamagedIndex =
                         FindLuaEventIndex(events, "EnemyDamaged", occurrence: 2);
 
-                    Assert.That(firstDamageRequestIndex, Is.GreaterThan(firstCreatedIndex));
+                    Assert.That(firstAttackStartedIndex, Is.GreaterThan(firstCreatedIndex));
+                    Assert.That(
+                        firstDamageRequestIndex,
+                        Is.GreaterThan(firstAttackStartedIndex));
                     Assert.That(firstDamagedIndex, Is.EqualTo(firstDamageRequestIndex + 1));
-                    Assert.That(secondDamageRequestIndex, Is.GreaterThan(firstDamagedIndex));
+                    Assert.That(secondAttackStartedIndex, Is.GreaterThan(firstDamagedIndex));
+                    Assert.That(
+                        secondDamageRequestIndex,
+                        Is.GreaterThan(secondAttackStartedIndex));
                     Assert.That(secondDamagedIndex, Is.EqualTo(secondDamageRequestIndex + 1));
 
                     LuaTable firstDamageRequest =
@@ -4180,6 +4265,33 @@ namespace ProtectTree.Runtime.Tests
                     attackEvent.Get<int>("source_piece_instance_id"),
                     Is.EqualTo(expectedSourcePieceInstanceId));
                 Assert.That(attackEvent.Get<int>("damage"), Is.EqualTo(expectedDamage));
+            }
+            finally
+            {
+                attackEvent.Dispose();
+            }
+        }
+
+        private static void AssertPieceAttackStarted(
+            LuaTable events,
+            int index,
+            int expectedWave,
+            int expectedEnemyInstanceId,
+            int expectedSourcePieceInstanceId)
+        {
+            LuaTable attackEvent = events.Get<int, LuaTable>(index);
+            try
+            {
+                Assert.That(
+                    attackEvent.Get<string>("type"),
+                    Is.EqualTo("PieceAttackStarted"));
+                Assert.That(attackEvent.Get<int>("wave"), Is.EqualTo(expectedWave));
+                Assert.That(
+                    attackEvent.Get<int>("enemy_instance_id"),
+                    Is.EqualTo(expectedEnemyInstanceId));
+                Assert.That(
+                    attackEvent.Get<int>("source_piece_instance_id"),
+                    Is.EqualTo(expectedSourcePieceInstanceId));
             }
             finally
             {

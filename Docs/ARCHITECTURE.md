@@ -82,6 +82,57 @@ on a deterministic fixed grid:
   presentation-only cells. `MatchBoardPresenter` builds the static match-scene
   terrain and handles visual cell selection without deciding whether a
   deployment command is legal.
+- Piece attack range preview is derived from the same Lua `Config.Pieces`
+  `attack_range` offsets used by `PieceAttackPlanner`. C# may render those
+  offsets as orange-red board highlights, but it must treat them as display
+  data from the authority/config layer, not as a separate targeting rule.
+- Synergy bar and synergy detail UI render from `SynergyProgressSnapshot` and
+  the current piece roster. The first detail panel shows owned pieces for the
+  selected synergy and tints bench pieces gray; it is not a complete static
+  collection browser until Lua exposes a read-only piece config list to UI.
+- Synergy activation level and synergy layer count are separate authoritative
+  values. Activation is determined by the board roster, while layer count is
+  accumulated by Lua traits such as grant, kill, perfect-defense, and
+  gold-spend triggers. C# and UI may display or serialize `LayerCount`, but
+  they must not derive layer effects locally.
+- `UIPieceInspectPanel` may render either a deployed/reserve `PieceSnapshot` or
+  a pending `ShopOfferSnapshot`. Lua config owns the player-facing
+  `feature_description` text and level-one shop preview stats; UI only displays
+  those snapshot values. Shop preview uses the raw offer snapshot before
+  purchase, while selected battlefield pieces use the current piece snapshot
+  after synergy, trait, health, level, and battle-state changes.
+- Shop item clicks use a two-step confirmation flow. The first click selects a
+  shop slot, shows that item in `UIPieceInspectPanel`, and enables the item
+  confirm effect. A second click on the same slot submits purchase intent.
+  Clicking outside that shop item cancels the pending purchase. Inspecting a
+  visible shop item is separate from purchasing it: the item can still open the
+  raw offer preview when the player lacks gold or bench space, but the second
+  click only purchases if the latest authority snapshot says the offer is
+  currently affordable and usable. Shop offer preview is UI-driven and is not
+  blocked by the board piece press/drag/facing-confirmation inspection guard;
+  that guard only suppresses deployed/reserve piece inspection. `UIShop` also
+  calls `UIPieceInspectPanel.PreviewShopOffer(...)` on the first click, so the
+  preview appears immediately in the same frame instead of depending only on
+  the next `MatchSceneContext` refresh.
+- Unit prefab and projectile presentation are Unity-side visual configuration,
+  not Lua gameplay configuration. Lua IDs such as `piece_id`, `enemy_id`,
+  `portrait`, and `class_id` stay in config tables; Unity maps unit IDs to
+  prefabs through Resources catalogs such as `DefaultUnitVisualCatalog` and
+  `DefaultProjectileCatalog`. `class_id` directly names the icon resource under
+  `Resources/UI/Icons/CharacterType`, for example `class_id = "Magician"` loads
+  `Magician.png`.
+- Piece star/merge visuals are presentation-only. `BoardPieceLevelVfx` may be
+  attached to individual piece prefabs for art tuning, but missing components
+  are created at runtime with a generic glow. Lua remains authoritative for
+  the actual merge result and piece `level`; C# only renders the current level
+  and the `PiecesMerged` event.
+- Projectile visuals are driven by authoritative attack events. They may play
+  delayed arrows, spells, trails, or hit effects, but they must not decide
+  damage, target validity, blocking, leaks, or death.
+- Ordinary attack visuals start from `PieceAttackStarted` and
+  `EnemyAttackStarted`. Actual ordinary-hit damage is requested later through
+  `EnemyDamageRequested` and `PieceDamageRequested` after the configured impact
+  delay, and the target is revalidated at that impact moment.
 - `BoardRouteView` can draw route snapshots under the observed board's
   dedicated `Routes` root when `Show Route Debug Lines` is enabled. Formal
   gameplay hides these debug lines; this does not remove or change authority
@@ -101,16 +152,27 @@ on a deterministic fixed grid:
   each route so pieces on a shared section can block enemies from either path.
 - `Match.BoardValidator` checks full coordinate coverage, terrain and zone
   references, reserve capacities, traversability, adjacent route samples,
-  route progress, Spawn starts, and Endpoint finishes before a session starts.
+  and route progress before a session starts. Normal enemy routes must begin at
+  a Spawn cell and finish at the Endpoint cell. Boss routes listed in
+  `board.boss_routes` are route segments, so they may start or finish before
+  the normal Spawn/Endpoint cells while still requiring valid traversable
+  samples.
 - Player intent always submits a cell ID. Picking a visible cell does not prove
   that deployment is legal.
 
 Normal defense uses the same static terrain layout for every player. The client
 therefore keeps one visible personal-board view and changes only its dynamic
 piece, enemy, and effect content when `observedPlayerId` changes. Static board
-meshes are not rebuilt when switching between players. The shared Boss arena is
-a separate board view because it has different ownership and presentation
-requirements.
+meshes are not rebuilt when switching between players. Boss battle now follows
+the same personal-board viewing model: there is one shared boss state, but the
+boss visits one surviving player's board at a time instead of forcing all
+players into one oversized shared arena.
+
+Observation switching is presentation state. `LocalPlayerId` remains the only
+player this client may control, while `ObservedPlayerId` decides which active
+player's board is currently rendered. Formal match UI may request observation
+changes through `MatchSceneContext.RequestObservePlayer(...)`; it must not
+mutate snapshots or gameplay state directly.
 
 All players' combat continues on the authority even when a client does not
 render it. Formal spectating will use authority-produced, timestamped combat
@@ -176,6 +238,10 @@ Transport, protocol, and gameplay authority are separate responsibilities:
 - Transport delivers serialized bytes and reports connection lifecycle.
 - `ProtectTree.Core.Network` defines versioned envelopes, player-intent
   commands, lobby snapshots, complete match snapshots, and ordering gates.
+- `ProtectTree.Runtime.Network` defines transport-facing runtime adapters and
+  byte-level transport interfaces. It also defines protocol codec boundaries
+  that turn protocol envelopes into transport bytes. A transport implementation
+  must not call Lua directly or inspect gameplay DTO contents.
 - The host maps each connection to one assigned player ID before accepting a
   claimed command identity.
 - Each client snapshot contains public match state and only that recipient's
@@ -188,6 +254,88 @@ Transport, protocol, and gameplay authority are separate responsibilities:
 Client command sequences increase independently per player. Server snapshot
 sequences increase globally. Snapshot simulation Tick must never move
 backward.
+
+The first concrete codec is binary and currently covers player commands,
+recipient-scoped server snapshots, lobby snapshots, lobby assignment/command
+messages, and match-start transition messages. It is deterministic and easy to
+inspect, but it is not yet a bandwidth-tuned production protocol; when snapshot
+or envelope fields change, the protocol version and codec field order must be
+updated together.
+
+The encoded loopback path uses `LoopbackMatchByteHost` to simulate the future
+host-side byte boundary: client code encodes a command envelope to `byte[]`, the
+host adapter decodes it before invoking authority, then the host encodes a
+recipient-scoped snapshot back to `byte[]` for the client to decode. This keeps
+real transport integration replaceable; a future LAN adapter should provide
+connection lifecycle and payload delivery, not inspect gameplay state.
+
+`EncodedLoopbackDebugInput` is an opt-in scene diagnostic for manually driving
+that byte path in Play Mode. It must remain a debug hook; formal multiplayer UI
+should later talk to lobby and transport-facing services instead of depending
+on this component.
+
+The first real LAN adapter is TCP-based. `TcpMatchHostTransport` and
+`TcpMatchClientTransport` move length-framed protocol payloads over direct
+`IP:Port` connections. Their network work runs on background tasks, while
+`Pump()` dispatches queued connect, disconnect, failure, and message events on
+the Unity main thread. Gameplay code should therefore call transport `Pump()`
+from an owning MonoBehaviour before reacting to transport events.
+
+Lobby flow now has a service boundary above transport. `LobbyHostService` owns
+Host-side room state, assigns connection-scoped player IDs, validates lobby
+command identity and sequence, and broadcasts `LobbySnapshot`. `LobbyClientService`
+receives `LobbyAssignment`, sends ready/display-name commands, and caches the
+latest lobby snapshot. UI should call these services; UI should not directly
+parse TCP payloads or assign player IDs.
+
+`LanLobby` is the first scene-level UI adapter for that service boundary. It can
+create a direct-IP room, join by `IP:Port`, render lobby players, toggle ready
+state, and transition all room members into `SampleScene` after receiving the
+Host-authored `MatchStart` message. That transition only establishes player
+count and local player identity through `MatchStartupOptions`; formal in-match
+LAN command submission and recipient-scoped snapshot playback remain separate
+multiplayer work.
+
+`LanMatchRuntime` is the cross-scene LAN match holder. It is created from the
+lobby start message, survives the transition into `SampleScene`, and records
+role, room ID, match ID, player count, local player ID, Host address, and match
+port. It now also owns the first in-match command/snapshot channel: Host listens
+on the match port, Client sends encoded player commands, Host routes accepted
+commands through Lua authority, and Client caches recipient-scoped Host
+snapshots. Presentation code may read the runtime through `MatchSceneContext`;
+gameplay authority still remains on Host Lua. Client-side match UI should submit
+player intent through `LanMatchRuntime.TrySendCommand(...)` and wait for Host
+snapshots instead of mutating local Lua state. The current formal UI coverage is
+Ready, shop operations, piece placement, and sell/drop. Host also broadcasts
+recipient-scoped snapshots at a low fixed rate to already-bound match clients,
+which gives the first battle playback path without asking Clients to resimulate
+combat. A LAN Client still starts its scene-local Lua runtime for static
+configuration and board snapshot access, but `LuaBootstrap` pauses local
+simulation ticks on Clients; gameplay phase, pieces, enemies, players, shops,
+and match events must come from Host snapshots. Clients automatically send
+`MatchJoin` after connecting so Host can bind the connection to a player ID and
+return an initial authoritative snapshot before any gameplay click. `MatchJoin`
+includes a Host-authored token delivered inside that player's
+`MatchStartEnvelope`; Host validates room ID, match ID, player ID, and token
+before accepting the join. The expected token table belongs to the active match
+session and must survive transport cleanup/rebuild during scene binding. Demo
+short reconnect reuses that token only when Host has already observed the old
+connection disconnecting and no active connection owns the same player ID.
+`RequestSnapshot` remains a no-side-effect player command, but ordinary player
+commands no longer establish connection identity. Enemy views may smooth small
+position differences between snapshots, but this is presentation-only and must
+not create damage, leaks, deaths, or other gameplay results. Future reconnect
+support must define saved token storage, process resume, and expiry rules.
+
+`MatchStateSnapshot` may also carry public one-shot `MatchEvent` records.
+This is currently used by the LAN Demo to expose joint-defense start, rescued
+leaks, final leak resolution, and health damage to Clients without letting
+Clients resimulate settlement locally. The same snapshot-carried event path now
+also exposes shared Boss creation, board retargeting, damage, endpoint/defeat
+outcomes, and final match result logs. The events are presentation data, not the
+final reliable combat log: later spectator and reconnect work should add event
+IDs, retention, de-duplication, and catch-up keyframes before relying on them
+for polished playback.
 
 ## Fixed Grid Contract
 
@@ -210,23 +358,39 @@ startup.
 
 ## Shared Boss Contract
 
-Surviving players enter one shared boss arena. Units retain their owner ID,
-while the authority runs one boss battle and one shared boss state.
+Surviving players enter one shared boss battle. A Boss wave may contain regular
+minions and exactly one shared Boss. Regular Boss-wave minions are spawned
+independently for every alive player; the Boss is created once with one shared
+health pool. `target_player_id` represents the board the Boss is currently
+visiting. Only that board's pieces can see, block, and attack the Boss during
+the current visit.
 
-The current single-player vertical slice already validates the Boss authority
-foundation locally: five normal waves advance into `BossPreparation` and
-`BossBattle`, defeating the Boss ends in Victory, and the Boss reaching the
-endpoint ends in Defeat. Multiplayer shared-arena presentation remains future
-work.
+The Boss no longer loses by reaching a defense endpoint. Boss battle failure is
+owned by the Boss defense timer. The current Boss route uses two dedicated route
+segments: it walks toward the defense-point doorway, returns toward the spawn
+doorway, then transfers to the next alive player's board. If all deployed board
+pieces on the current target board are downed at the same time, Session requests
+an early transfer.
+
+This replaces the earlier large shared-arena direction. The board-hopping model
+keeps the camera readable for up to four players, reuses personal-board
+presentation, and still preserves a single authoritative boss result:
+defeating the Boss ends in Victory, while the Boss defense timer expiring ends
+in Defeat.
 
 ## Documentation Discipline
 
 Before changing gameplay, presentation, networking, XLua, or scene workflow,
-check the relevant files under `Docs/` for current project state and previous
-decisions. After a change that alters rules, architecture boundaries, validation
-status, or development direction, update the matching document in the same
-task. Documentation is part of the implementation contract, not a separate
-cleanup phase.
+start with `Docs/CURRENT_STATE.md`, then check the relevant detailed files
+under `Docs/` for previous decisions. After a change that alters rules,
+architecture boundaries, validation status, or development direction, update
+the matching document in the same task. Documentation is part of the
+implementation contract, not a separate cleanup phase.
+
+`Docs/GAME_DATA_GUIDE.md` is the designer-facing content configuration manual.
+Use it as the first reference when editing pieces, enemies, synergies, shop
+probabilities, waves, player numbers, flow timing, board data, and Unity
+resource catalogs.
 
 ## Platform Constraints
 
@@ -236,3 +400,17 @@ cleanup phase.
 - Gameplay scripts must not use desktop-only file paths or APIs.
 - Android loads downloaded scripts from persistent data and packaged initial
   scripts from generated Unity Resources inside the APK.
+
+## Build Diagnostics
+
+Windows Player builds include a lightweight runtime log viewer for LAN
+validation. `BuildLogViewer` is auto-created only in standalone Windows Player
+builds, listens to `Application.logMessageReceived`, and draws an IMGUI overlay
+when `F12` is pressed. It shows recent logs, error stacks, and the Unity
+`Player.log` folder. This is a development diagnostic surface, not gameplay UI,
+and it should not become an authority path or scene dependency.
+
+Windows Player builds also force `Application.runInBackground = true` at runtime
+because LAN validation commonly opens Host and Client side by side. Keeping the
+unfocused client ticking is required for transport `Pump()` dispatch and match
+state synchronization.

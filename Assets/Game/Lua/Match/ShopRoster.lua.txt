@@ -149,6 +149,7 @@ local function build_offers(refresh_index, level)
         local pool_index = ((refresh_index + slot_index - 2) % #pool) + 1
         local piece_id = pool[pool_index]
         local piece_config = piece_configs[piece_id]
+        local level_one_config = piece_config.levels[1]
 
         table.insert(offers, {
             slot_index = slot_index,
@@ -156,8 +157,13 @@ local function build_offers(refresh_index, level)
             display_name = piece_config.display_name,
             portrait = piece_config.portrait,
             class_id = piece_config.class_id,
+            feature_description = piece_config.feature_description or "",
             rarity = rarity,
             cost = piece_config.cost,
+            max_health = level_one_config.max_health,
+            max_block_count = level_one_config.max_block_count,
+            damage = level_one_config.damage,
+            attack_interval_seconds = piece_config.attack_interval_seconds,
             synergies = copy_synergies(piece_config),
             is_sold = false,
         })
@@ -166,7 +172,7 @@ local function build_offers(refresh_index, level)
     return offers
 end
 
-local function copy_offer(offer)
+local function copy_offer(offer, purchase_discount)
     local synergies = {}
     for _, synergy in ipairs(offer.synergies) do
         table.insert(synergies, {
@@ -174,6 +180,7 @@ local function copy_offer(offer)
             display_name = synergy.display_name,
         })
     end
+    local discount = purchase_discount or 0
 
     return {
         slot_index = offer.slot_index,
@@ -181,8 +188,13 @@ local function copy_offer(offer)
         display_name = offer.display_name,
         portrait = offer.portrait,
         class_id = offer.class_id,
+        feature_description = offer.feature_description,
         rarity = offer.rarity,
-        cost = offer.cost,
+        cost = math.max(0, offer.cost - discount),
+        max_health = offer.max_health,
+        max_block_count = offer.max_block_count,
+        damage = offer.damage,
+        attack_interval_seconds = offer.attack_interval_seconds,
         synergies = synergies,
         is_sold = offer.is_sold,
     }
@@ -346,7 +358,7 @@ function M.upgrade(player_id)
     return deployment_limit
 end
 
-function M.purchase(player_id, slot_index)
+function M.purchase(player_id, slot_index, actual_cost)
     local offer = M.get_offer(player_id, slot_index)
     shops_by_player_id[player_id].offers[slot_index].is_sold = true
 
@@ -355,19 +367,19 @@ function M.purchase(player_id, slot_index)
         player_id = player_id,
         slot_index = slot_index,
         piece_id = offer.piece_id,
-        cost = offer.cost,
+        cost = actual_cost or offer.cost,
     })
 
     return offer.piece_id
 end
 
-function M.get_snapshot(player_id)
+function M.get_snapshot(player_id, purchase_discount)
     local shop = get_shop(player_id)
     local is_max_level = shop.level >= #shop_config.levels
 
     local offers = {}
     for _, offer in ipairs(shop.offers) do
-        table.insert(offers, copy_offer(offer))
+        table.insert(offers, copy_offer(offer, purchase_discount))
     end
 
     return {

@@ -14,7 +14,9 @@ namespace ProtectTree.Core.Match
             int attackDamage,
             double attackIntervalSeconds,
             string attackType,
+            string attackSfxId,
             bool isBoss,
+            bool isEnraged,
             int routeId,
             double pathSpeed,
             double pathProgress,
@@ -31,7 +33,9 @@ namespace ProtectTree.Core.Match
             AttackDamage = attackDamage;
             AttackIntervalSeconds = attackIntervalSeconds;
             AttackType = attackType;
+            AttackSfxId = attackSfxId ?? string.Empty;
             IsBoss = isBoss;
+            IsEnraged = isEnraged;
             RouteId = routeId;
             PathSpeed = pathSpeed;
             PathProgress = pathProgress;
@@ -60,7 +64,11 @@ namespace ProtectTree.Core.Match
 
         public string AttackType { get; }
 
+        public string AttackSfxId { get; }
+
         public bool IsBoss { get; }
+
+        public bool IsEnraged { get; }
 
         public int RouteId { get; }
 

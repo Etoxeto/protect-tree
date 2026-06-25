@@ -1,4 +1,5 @@
 using ProtectTree.Core.Match;
+using ProtectTree.Runtime;
 using ProtectTree.Runtime.Board;
 using ProtectTree.Runtime.Lua;
 using UnityEngine;
@@ -12,8 +13,10 @@ namespace ProtectTree.Runtime.Presentation
         [Header("Board View")]
         [SerializeField] private ObservedBoardView observedBoardView;
         [SerializeField] private Transform highlightRoot;
+        [SerializeField] private Transform projectileRoot;
         [SerializeField] private BoardVisualDefinition visualDefinition;
         [SerializeField] private BoardUnitVisualCatalog unitVisualCatalog;
+        [SerializeField] private BoardProjectileCatalog projectileCatalog;
 
         [Header("Projection")]
         [SerializeField] private float tileWidth = 1.6f;
@@ -55,6 +58,7 @@ namespace ProtectTree.Runtime.Presentation
         private BoardRouteView _routeView;
         private BoardPieceView _pieceView;
         private BoardEnemyView _enemyView;
+        private BoardProjectilePresenter _projectilePresenter;
         private readonly MatchBoardInteraction _interaction =
             new MatchBoardInteraction();
         private bool _hasInitialCameraState;
@@ -111,11 +115,17 @@ namespace ProtectTree.Runtime.Presentation
                 context.Pieces,
                 observedBoardView.ObservedPlayerId,
                 context.SelectedPieceInstanceId);
+            _enemyView?.HandlePreSyncEvents(context.Events);
             _enemyView?.Sync(
                 context.Enemies,
                 observedBoardView.ObservedPlayerId);
             _pieceView?.HandleEvents(context.Events);
-            _enemyView?.HandleEvents(context.Events);
+            _enemyView?.HandleEvents(context.Events, _pieceView);
+            _projectilePresenter?.HandleEvents(
+                context.Events,
+                context.Pieces,
+                _pieceView,
+                _enemyView);
 
             if (enablePicking)
             {
@@ -142,6 +152,8 @@ namespace ProtectTree.Runtime.Presentation
             Transform routeRoot = observedBoardView?.RouteRoot;
             Transform pieceRoot = observedBoardView?.PieceRoot;
             Transform enemyRoot = observedBoardView?.EnemyRoot;
+            Transform resolvedProjectileRoot =
+                projectileRoot != null ? projectileRoot : observedBoardView?.EffectRoot;
             if (staticBoardRoot == null
                 || routeRoot == null
                 || pieceRoot == null
@@ -225,6 +237,17 @@ namespace ProtectTree.Runtime.Presentation
                 sorting,
                 resolvedUnitVisualCatalog);
 
+            BoardProjectileCatalog resolvedProjectileCatalog =
+                projectileCatalog != null
+                    ? projectileCatalog
+                    : Resources.Load<BoardProjectileCatalog>(
+                        "Board/DefaultProjectileCatalog");
+            _projectilePresenter = new BoardProjectilePresenter();
+            _projectilePresenter.Initialize(
+                resolvedProjectileRoot,
+                resolvedProjectileCatalog,
+                this);
+
             _picker = new BoardCellPicker(_layout, _projector, sorting);
             _builtSnapshot = snapshot;
         }
@@ -237,11 +260,13 @@ namespace ProtectTree.Runtime.Presentation
             _highlightView?.Clear();
             _pieceView?.Clear();
             _enemyView?.Clear();
+            _projectilePresenter?.Clear();
             _interaction.Reset(_highlightView);
             _builtSnapshot = null;
             _layout = null;
             _projector = null;
             _picker = null;
+            _projectilePresenter = null;
         }
 
         private void UpdateCameraFraming(MatchSceneContext context)
@@ -530,7 +555,10 @@ namespace ProtectTree.Runtime.Presentation
         private static bool IsBattlePhase(MatchFlowSnapshot flow)
         {
             return flow != null
-                && (flow.Phase == "Battle" || flow.Phase == "BossBattle");
+                && (flow.Phase == "Battle"
+                    || flow.Phase == "JointDefenseIntro"
+                    || flow.Phase == "JointDefense"
+                    || flow.Phase == "BossBattle");
         }
 
         private static PieceSnapshot FindPiece(

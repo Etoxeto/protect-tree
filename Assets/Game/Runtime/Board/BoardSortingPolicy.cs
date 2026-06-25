@@ -35,6 +35,13 @@ namespace ProtectTree.Runtime.Board
             return Clamp(GetRowBase(cell.Y) + cell.Height * HeightStride + UnitStage + cell.X);
         }
 
+        public int GetRouteUnitOrder(BoardVisualCell fromCell, BoardVisualCell toCell)
+        {
+            // 敌人在两个格子之间移动时会同时压住前后格的顶面。
+            // 取更靠前/更高的一端，避免半格切换排序时身体被地面遮住。
+            return Mathf.Max(GetUnitOrder(fromCell), GetUnitOrder(toCell));
+        }
+
         public int GetHighlightOrder(BoardVisualCell cell)
         {
             // 高亮盖住所属高度的顶面，但仍会被更高一级地形的侧面和顶面遮挡。

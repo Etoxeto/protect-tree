@@ -82,12 +82,16 @@ local function can_piece_block(piece, enemy, assigned_count, delta_time)
     if block_progress == nil then
         return false
     end
+    local route = board.routes[enemy.route_id]
+    local half_cell_window = 0
+    if route ~= nil and #route.samples > 1 then
+        half_cell_window = 0.5 / (#route.samples - 1)
+    end
 
-    -- 只在敌人本 Tick 刚经过阻挡点时尝试阻挡。
-    -- 若阻挡数已满，敌人下一 Tick 已越过该窗口，不会被拉回。
     local crossing_window = enemy.path_speed * delta_time + 0.000001
+    local block_window = math.max(crossing_window, half_cell_window)
     return enemy.path_progress >= block_progress
-        and enemy.path_progress <= block_progress + crossing_window
+        and enemy.path_progress <= block_progress + block_window
 end
 
 function M.start()
@@ -149,6 +153,13 @@ function M.update(delta_time, piece_snapshot, enemy_snapshot)
                     local cell = board.cells[piece.cell_id]
                     local block_progress =
                         board_queries.get_route_progress(cell, enemy.route_id)
+                    local crossing_window =
+                        enemy.path_speed * delta_time + 0.000001
+                    local stop_progress = block_progress
+                    if enemy.path_progress > block_progress + crossing_window then
+                        stop_progress = enemy.path_progress
+                    end
+
                     assignments_by_enemy_id[enemy.instance_id] = {
                         piece_instance_id = piece.instance_id,
                         cell_id = piece.cell_id,
@@ -159,7 +170,7 @@ function M.update(delta_time, piece_snapshot, enemy_snapshot)
                         type = "EnemyBlockRequested",
                         enemy_instance_id = enemy.instance_id,
                         piece_instance_id = piece.instance_id,
-                        block_progress = block_progress,
+                        block_progress = stop_progress,
                     })
                     break
                 end

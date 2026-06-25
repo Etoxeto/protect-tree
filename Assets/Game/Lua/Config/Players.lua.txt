@@ -2,11 +2,12 @@ local board = require("Config.Board")
 
 local function build_default_player()
     return {
-        max_health = 10,
+        max_health = 25,
         starting_gold = 10,
         round_reward = 5,
+        round_reward_per_wave_increment = 1,
         bench_capacity = board.reserve_capacity,
-        starting_deployment_limit = 2,
+        starting_deployment_limit = 4,
     }
 end
 

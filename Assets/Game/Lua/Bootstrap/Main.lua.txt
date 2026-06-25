@@ -89,6 +89,10 @@ function M.grant_overflow_piece(player_id, piece_id)
     return session.grant_overflow_piece(player_id, piece_id)
 end
 
+function M.debug_enter_boss_preparation()
+    return session.debug_enter_boss_preparation()
+end
+
 function M.deploy_piece(player_id, piece_instance_id, cell_id)
     -- Unity 只提交固定格部署意图，最终占格验证仍由 Lua 权威状态完成。
     session.handle_command({

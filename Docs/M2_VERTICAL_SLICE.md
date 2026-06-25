@@ -2066,8 +2066,8 @@ Status: Implemented and passed owner-run validation.
 - A downed piece recovers after its configured timer.
 - A downed piece also recovers when the complete combat stage ends.
 
-The Session treats both `Battle` and the future `JointDefense` phase as one
-continuous combat lifecycle. Entering joint defense therefore will not recover
+The Session treats both `Battle` and `JointDefense` as one continuous combat
+lifecycle. Entering joint defense therefore will not recover
 pieces that fell during personal defense. This explicitly preserves the
 required joint-defense state behavior.
 
@@ -2902,11 +2902,9 @@ authority board:
 - Only enemies targeting the currently observed player are shown.
 - The old placeholder view no longer creates a second enemy representation.
 
-Each current wave configuration still selects one route. This demonstrates
-both routes across configured waves while keeping the existing deterministic
-wave-spawner contract. A later wave-format extension can schedule multiple
-spawn groups on both routes during the same wave without changing
-`BoardEnemyView`.
+Wave configuration was later upgraded to support preset pools and multiple
+spawn groups in one wave. The enemy view still does not need special handling:
+it follows each spawned enemy's authoritative `route_id` and `PathProgress`.
 
 ### Owner-run validation
 
@@ -2922,6 +2920,91 @@ spawn groups on both routes during the same wave without changing
 5. Confirm blocked enemies stop visually at the blocking piece, damaged
    enemies update their health bar, and defeated or leaked enemies disappear.
 6. Confirm no second enemy appears on the old straight placeholder lane.
+
+## Step 37B - Wave Presets And Multi-Group Spawning
+
+Status: Implemented; awaiting owner-run validation.
+
+The wave system now supports content-style wave design instead of only one
+enemy type on one route per wave.
+
+### Configuration Entry
+
+Wave content lives in `Assets/Game/Lua/Config/Waves.lua.txt`.
+
+The top-level format is:
+
+- `random_seed`: deterministic seed used only by the Lua authority-side
+  `WaveSpawner`.
+- `schedule`: wave-count plan. `normal_wave_count` defines how many normal
+  waves run before Boss preparation, and `boss_wave` must immediately follow it.
+- `presets`: named wave presets.
+- `wave_pools`: per-wave preset pools. If a pool has one preset, that wave is
+  deterministic. If it has several presets, the authority selects one when the
+  battle phase starts.
+
+Each preset has one or more `groups`:
+
+```lua
+SomePreset = {
+    groups = {
+        {
+            group_id = "A",
+            route_id = 1,
+            start_seconds = 10,
+            interval_seconds = 1.0,
+            enemies = {
+                { enemy_id = "Crab", count = 3 },
+                { enemy_id = "Skitter", count = 2 },
+            },
+        },
+        {
+            group_id = "B",
+            route_id = 2,
+            start_seconds = 1,
+            interval_seconds = 0.75,
+            enemies = {
+                { enemy_id = "Crab", count = 7 },
+                { enemy_id = "Skitter", count = 3 },
+            },
+        },
+    },
+}
+```
+
+`route_id = 1` and `route_id = 2` currently correspond to the two right-side
+spawn routes configured in `Config.Board`.
+
+### Runtime Behavior
+
+- `WaveSpawner` resolves the current wave's pool when `Battle` or `BossBattle`
+  starts.
+- The selected preset is expanded into independent spawn groups.
+- Each group has its own start delay, interval, route, and enemy queue.
+- Multiple groups can spawn in the same frame if their timers are due.
+- The global `spawn_index` still increments once per spawned enemy across the
+  whole wave.
+- The existing `EnemySpawnRequested` event shape is preserved, so `Session`,
+  `EnemyRoster`, LAN snapshots, leak resolution, and board presentation continue
+  to consume spawn events through the same authority path.
+- The wave completes only after every group has emitted every configured enemy.
+
+### Current Limitations
+
+- Preset selection is deterministic pseudo-random from one authority-side seed;
+  there is no weighted pool yet.
+- Enemy order inside one group is sequential by config entry. A later extension
+  can add shuffle modes if needed.
+- The public C# `WaveSpawnerSnapshot` remains backward-compatible and only
+  exposes the next pending spawn summary, not every active group.
+
+### Wave Schedule Ownership
+
+Wave count now lives beside wave content in `Config.Waves.schedule`; `Config.MatchFlow`
+only owns phase durations such as preparation, settlement, and Boss board-visit
+timing. This avoids the earlier two-file mismatch where `MatchFlow` could enter
+BossBattle on one wave while `Waves.wave_pools` still configured that wave as a
+normal enemy preset.
 
 ## Step 38 - Remove The Old Placeholder Arena
 
@@ -3200,7 +3283,7 @@ Expected result after this alignment:
 
 ## Step 49 - Local Two-Player Prototype Entry and Observation Switch
 
-Status: Implemented; owner-run validation pending.
+Status: Implemented; owner-run validation passed.
 
 This step moves the project back toward the original multiplayer goal without
 introducing real networking yet. The scene can now be started as a local
@@ -3238,3 +3321,399 @@ Code-level changes:
    gold display should still operate only for local player 1.
 7. During battle, both players should receive their own spawned enemies; switching
    observation should show the selected player's enemies and pieces only.
+
+## Step 50 - Minimal Joint Defense Authority Phase
+
+Status: Implemented; owner-run validation partially passed.
+
+This step connects the first playable slice of the original joint-defense rule:
+normal personal defense no longer has to resolve directly into damage when one
+player leaks and another player fully defends. Instead, the match can enter a
+short `JointDefense` authority phase before final leak resolution.
+
+Current scope:
+
+- `MatchFlow` defines `JointDefense` as a timed phase between `Battle` and
+  `Settlement`.
+- `LeakResolver` can build a joint-defense plan from unresolved leak records and
+  the currently alive players.
+- `Session` enters `JointDefense` only when at least one alive player has zero
+  leaks and at least one alive player has leaks.
+- Leak damage is applied at settlement time after the joint-defense phase, not
+  immediately at the end of personal defense.
+- If no joint defense is available, the old direct battle-to-settlement flow is
+  preserved.
+- `JointDefense` is treated as a combat phase by the shop/camera presentation
+  helpers, so shop hiding and battle zoom remain consistent.
+- `RoundInfo` displays the phase as `联防中`.
+
+Deliberately not included in this Step 50 slice:
+
+- Leaked enemies are not transferred into the defender's board as visible units.
+- `LeakedEnemyRescued` is not produced by gameplay yet, so joint defense
+  currently delays damage timing but does not reduce leak counts through rescue
+  kills.
+- No new UI binding is required for this step.
+
+### Owner-run validation
+
+Owner validation results:
+
+- One player fully defending while another player leaks enters `联防中` before
+  settlement as expected.
+- All alive players leaking skips `联防中` as expected.
+- The all-players-fully-defend branch is still unverified because the current
+  local setup cannot conveniently simulate that case yet.
+
+Remaining validation:
+
+1. Create a situation where every alive player fully defends. The round should
+   skip `联防中` and go directly to settlement.
+2. During `联防中`, the shop should stay hidden and the battle camera behavior
+   should remain active.
+
+## Step 51 - Joint Defense Enemy Transfer and Rescue
+
+Status: Implemented; owner-run validation passed.
+
+This step turns `JointDefense` from a timing-only phase into a playable rescue
+slice:
+
+- `Flow` no longer treats `JointDefense` as a timed phase. `Session` now ends
+  it when all transferred enemies have either been defeated or escaped again.
+- `LeakResolver.get_joint_defense_plan()` includes the exact leaked enemy
+  instance IDs for each leaking player.
+- `EnemyRoster` can restore a leaked enemy instance from `ReachedEndpoint` back
+  to `Alive`, retarget it to the chosen defender, and mark it as a
+  joint-defense transfer.
+- Transferred enemies reuse their remaining health and route data. They restart
+  from the route beginning in the defender's board.
+- When a transferred enemy is defeated during `JointDefense`, `Session` emits
+  and routes `LeakedEnemyRescued`, reducing the original leaking player's final
+  leak count.
+- If a transferred enemy reaches the endpoint again, it is not recorded as a
+  second leak. The original leak remains unresolved and will still damage the
+  original leaking player at settlement.
+
+Current simplifications:
+
+- The first eligible full-defense player is still chosen as the only defender.
+- Transferred enemies currently reuse the same route definition instead of a
+  dedicated rescue route.
+- The event bridge does not yet expose defender/leak-owner metadata to C# UI;
+  the visible confirmation is the enemy appearing on the observed defender board
+  and final damage being reduced if it is defeated.
+
+### Owner-run validation
+
+Owner-run validation passed:
+
+- A leaked enemy appears on the defender board during `联防中`.
+- Defeating the transferred enemy reduces the leaking player's settlement
+  damage.
+- `联防中` exits after the transferred enemy flow is complete.
+
+## Step 52 - Shared Boss Authority Participation
+
+Status: Implemented; owner-run validation passed.
+
+This step removes the most important local-multiplayer Boss limitation. Boss
+waves still spawn exactly one boss instance, but all active players can now
+participate in defeating it.
+
+Note: the always-visible shared participation presentation from this step was
+superseded by Step 55's board-hopping Boss prototype. The shared health-pool
+authority remains, but visibility and interaction now follow the Boss's current
+target board.
+
+Implemented:
+
+- Boss spawn remains anchored to the first alive player ID so the authority does
+  not accidentally create one boss per player.
+- `PieceAttackPlanner` allows any active board piece to target a boss when the
+  boss is in that piece's configured attack range.
+- `BlockResolver` allows any active ground piece to block a boss when the boss
+  crosses that piece's route progress.
+- `BoardEnemyView` renders boss enemies for every observed player, not only for
+  the boss anchor player.
+
+Current simplifications:
+
+- The observed board still shows only the currently observed player's pieces.
+  Other players can damage the shared boss through authority simulation, but
+  their pieces are not drawn in the current observed view yet.
+- Boss route and board layout are still reused from the normal authority board.
+  A dedicated shared Boss arena remains a later presentation/gameplay task.
+
+### Owner-run validation
+
+Owner-run validation passed:
+
+- The boss has one shared health pool.
+- Damage dealt while observing player 1 is reflected when observing player 2.
+- This confirms the current local-multiplayer prototype is sharing boss
+  authority state correctly.
+
+### Boss Design Direction
+
+For future multiplayer Boss design, prefer making the boss move between
+players' personal boards over building one large shared board. This keeps the
+camera readable, avoids pulling the view too far back for four players, and
+should be friendlier to performance than rendering and interacting with one
+large common arena.
+
+## Step 53 - Observed-Player Debug Operation Input
+
+Status: Implemented; owner-run validation passed.
+
+This step adds a small debug-only path for local multiplayer verification. It
+does not replace formal multiplayer UI and remains disabled unless
+`MatchKeyboardInput.Enable Debug Input` is manually enabled in the scene.
+
+Implemented:
+
+- `MatchKeyboardInput` can optionally operate the currently observed player
+  instead of always operating player 1.
+- Pressing `G` grants the configured debug piece ID to the controlled player.
+  The default is `Sprout`.
+- `Tab`, `1`/`2`/`3`, arrow keys, `B`, `X`, and `Space` now use the controlled
+  debug player, so switching observation to player 2 allows basic player-2
+  setup and ready commands.
+- Shop shortcuts `Q`/`W`/`E`, `R`, `U`, and `L` still operate only the real
+  local player because the visible shop snapshot belongs to the local player.
+
+### Owner-run validation
+
+Owner-run validation passed. `Keyboard Input` under `LuaBootstrap` can be
+enabled in `SampleScene`, and the observed-player debug controls work for
+player-2 setup.
+
+## Step 54 - Debug Boss Preparation Jump
+
+Status: Implemented; owner-run validation passed.
+
+This step keeps shared Boss validation from requiring a full five-wave run every
+time. The shortcut is intentionally routed through Lua authority flow so
+`PhaseChanged` events, ready-state reset, camera/shop presentation, and
+WaveSpawner setup still follow the normal phase pipeline.
+
+Implemented:
+
+- `Flow.debug_enter_boss_preparation()` moves from normal `Preparation` directly
+  to `BossPreparation` at the configured boss wave.
+- `Session.debug_enter_boss_preparation()` exposes that transition and routes
+  resulting phase events.
+- `Bootstrap.Main.debug_enter_boss_preparation()` and
+  `LuaRuntime.DebugEnterBossPreparation()` expose the debug call to Unity.
+- `MatchKeyboardInput` calls it when debug input is enabled and `F6` is pressed.
+
+### Owner-run validation
+
+Owner-run validation passed. `F6` can be used from Preparation to reach
+BossPreparation quickly, enabling shared Boss validation without a full
+five-wave run.
+
+## Step 55 - Boss Board-Hopping Authority Prototype
+
+Status: Implemented; owner-run validation passed.
+
+This step replaces the earlier "show the boss on every observed board" prototype
+with the first board-hopping Boss rule. There is still exactly one authoritative
+boss instance and one shared health pool, but the boss now visits one surviving
+player's personal board at a time.
+
+Implemented:
+
+- The original fixed visit timer was replaced by Boss-route completion and
+  all-pieces-downed transfer rules in the later Boss-wave update.
+- `Session` keeps the same boss instance and retargets it to the next alive
+  player when transfer is requested.
+- `EnemyRoster` handles `BossRetargetRequested` and emits `BossRetargeted`.
+- The boss does not retarget while blocked, because the current blocking system
+  expects paired block/unblock events.
+- `PieceAttackPlanner`, `BlockResolver`, and `BoardEnemyView` now treat the boss
+  like other enemies for ownership: only the currently targeted player's board
+  can see, block, and attack it.
+
+Current simplifications:
+
+- The boss visually teleports between equivalent route positions on different
+  personal boards. Later presentation can add a warning, portal, camera cue, or
+  transition effect.
+- The visit order is deterministic by alive player ID.
+- Boss retarget events are public authority events, but no dedicated UI message
+  has been added yet.
+
+### Owner-run validation
+
+Owner-run validation passed:
+
+- The boss appears only on the currently targeted personal board.
+- The boss switches boards after the configured visit interval.
+- The boss health pool remains shared across board switches.
+
+## Step 56 - Piece Attack Range Highlight
+
+Status: Implemented; pending owner-run validation.
+
+This step adds player-facing combat readability for pieces on the battlefield.
+The highlight is presentation-only and follows the same `attack_range`
+configuration used by Lua combat targeting, so changing a piece's
+`forward/right` offsets in `Config.Pieces` updates both targeting and the
+preview shape.
+
+Implemented:
+
+- `PieceRoster` now copies each piece config's `attack_range` into the piece
+  snapshot.
+- `LuaRuntime` and LAN snapshot serialization now carry attack range offsets in
+  `PieceSnapshot`; the network protocol version is bumped to `10`.
+- `BoardCellHighlightView` now supports a third highlight layer for attack
+  ranges, colored orange-red by default and kept below selected/deployable
+  highlights.
+- `MatchBoardInteraction` shows attack range when selecting a piece already on
+  the board, hides it for reserve pieces, previews it while dragging over a
+  valid battle cell, updates it during facing confirmation, and clears it after
+  cancel/confirm.
+
+Owner validation checklist:
+
+- Select a deployed board piece: orange-red cells should show its configured
+  range.
+- Select a reserve piece: no attack range should appear.
+- Drag a piece over valid battle cells: the range should follow the hovered
+  cell; dragging over reserve or invalid space should hide it.
+- During facing confirmation, drag toward different directions and confirm:
+  the range should rotate with the preview and disappear after placement.
+
+## Step 57 - Projectile Presentation For Ranged Attacks
+
+Status: Implemented; pending owner-run validation.
+
+This step adds a Unity-side projectile presentation path for ranged or spell
+pieces. It stays presentation-only: Lua combat still decides target selection,
+damage, defeat, and leaks. Unity listens to authoritative attack events and
+plays the visual projectile after an optional configured delay.
+
+Implemented:
+
+- `BoardUnitSocket` exposes optional `FirePoint` and `HitPoint` anchors on
+  unit prefabs. Missing anchors fall back to the unit root position.
+- `BoardProjectileVisual` controls straight-line projectile movement, optional
+  rotation toward velocity, short impact hold, optional impact effect, sorting,
+  and pool return.
+- `BoardProjectilePool` pools projectile instances under the observed board's
+  effect/projectile root and clears active or delayed projectiles when the board
+  is rebuilt.
+- `BoardProjectileCatalog` is now a `ScriptableObject` mapping `piece_id` to a
+  projectile prefab plus fire delay, speed, impact hold, and rotation settings.
+- `DefaultProjectileCatalog.asset` is added under `Resources/Board`; the first
+  sample entry maps `Bloom` to `Magic_0_Projectile`.
+- `BoardPieceView` and `BoardEnemyView` expose fire/hit anchor lookup for visible
+  units.
+- `MatchBoardPresenter` initializes the projectile presenter and launches
+  projectiles from `EnemyDamageRequested` events after piece/enemy views have
+  synchronized.
+
+Configuration contract:
+
+- Gameplay stats and shop visibility live in `Assets/Game/Lua/Config`.
+- Unit prefabs are mapped in `Assets/Resources/Board/DefaultUnitVisualCatalog.asset`.
+- Projectile prefabs are mapped in
+  `Assets/Resources/Board/DefaultProjectileCatalog.asset`.
+- Shop portraits are loaded from `Resources/UI/Characters/{portrait}` where
+  `portrait` comes from `Config.Pieces`.
+
+Owner validation checklist:
+
+1. Let Unity reimport scripts and confirm the Console has no compile errors.
+2. Confirm `ObservedBoardView.EffectRoot` points at the scene's `Projectiles`
+   or effect root.
+3. Deploy a piece whose `piece_id` has a projectile catalog entry, such as the
+   sample `Bloom` entry.
+4. Start battle and confirm the piece still plays its attack animation.
+5. Confirm the configured projectile spawns from the piece `FirePoint`, flies to
+   the enemy `HitPoint`, then disappears or briefly holds according to the
+   catalog value.
+
+## Step 58 - Synergy Layers, Trait Effects, and Battle-End Recovery
+
+Status: Implemented; pending owner-run validation.
+
+This step completes the first playable version of the new synergy-layer system.
+Synergy activation is still decided by battlefield composition, while layer
+counts decide effect strength only after the synergy is active.
+
+Implemented:
+
+- Active synergy and synergy-progress snapshots now carry `LayerCount` and a
+  player-facing `EffectDescription`; LAN snapshot protocol version is bumped to
+  include these fields.
+- Piece traits can add synergy layers when a piece is granted, when a perfect
+  battle is resolved, when a piece gets a kill, when gold is spent, or when the
+  preparation phase ends after spending gold.
+- 【君王】 remains a special exact-one activation synergy and does not use layer
+  growth.
+- Attack/health percent synergies use the temporary shared formula: 0 layers is
+  10%, then every 2 layers adds 1%.
+- 【学院】 purchase discounts may reduce a shop offer to 0 gold.
+- 【风暴】 can emit a deterministic whirlwind damage event when an active Storm
+  piece successfully attacks; the projectile catalog key is `Storm`.
+- 【魔力】 can emit periodic magic-sword damage events for active MagicPower
+  pieces; the projectile catalog key is `MagicPower`.
+- Synergy projectiles can scale from active synergy layers through
+  `DefaultProjectileCatalog.asset`; Storm and MagicPower currently grow by 10%
+  every 20 layers.
+- MagicPower uses `MagicSword_0_Projectile`, while the normal magician attack
+  can keep using the regular magic projectile.
+- All pieces recover to full health when the whole battle flow settles.
+- The synergy detail panel hides on the first click outside the panel or synergy
+  items.
+
+Owner validation checklist:
+
+1. Let Unity reimport scripts and confirm the Console has no compile errors.
+2. Open an active synergy detail and click outside it once; the detail panel
+   should hide immediately.
+3. Create an active College synergy with enough layers to discount an offer
+   below its base cost; the shown and charged price may reach 0.
+4. Check Golden/Furnace/Knight detail text and affected stats: 0/1 layer should
+   show 10%, 2/3 layers should show 11%.
+5. Damage a deployed piece during battle, then let the battle fully settle; the
+   piece should return to full health.
+6. If `DefaultProjectileCatalog.asset` has `Storm` and `MagicPower` entries,
+   confirm their visuals play separately from normal piece projectiles.
+
+## Step 59 - Minimal Audio Feedback
+
+Status: Implemented; pending owner-run validation.
+
+This step adds the first lightweight audio path. Audio remains a Unity
+presentation feature; Lua still owns gameplay authority and only exposes the
+state or events that presentation code reacts to.
+
+Implemented:
+
+- `AudioManager` persists across scene loads, owns BGM/SFX sources, loads clips
+  from `Resources/Audio`, and stores master/BGM/SFX volume in `PlayerPrefs`.
+- The menu setting panel now drives the three volume sliders.
+- Main-menu buttons play `button_01`.
+- Shop lock plays `button_01`.
+- Shop purchase, refresh, and upgrade play `coin_spend` after the command is
+  accepted locally or sent to the LAN host.
+- Menu/preparation/settlement, normal battle, and Boss battle now switch between
+  `bgm_normal`, `bgm_battle`, and `bgm_goatBoss`.
+- Match combat events now play lightweight feedback for attacks, impacts, enemy
+  defeats, local-player leaks, and local-player all-clear results.
+- Ordinary piece attack sounds are data-driven through each piece's
+  `attack_sfx_id` in `Config.Pieces`; Storm and MagicPower synergy projectile
+  sounds still use their dedicated presentation IDs.
+- Ordinary enemy attack sounds are data-driven through each enemy's
+  `attack_sfx_id` in `Config.Enemies`.
+
+Current deliberate limits:
+
+- Piece selection, synergy-detail opening, and other small inspection actions do
+  not play sounds yet.
+- Victory/defeat fanfares and Boss-skill-specific sounds still need dedicated
+  resource choices before wiring.

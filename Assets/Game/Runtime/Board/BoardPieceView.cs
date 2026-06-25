@@ -16,6 +16,7 @@ namespace ProtectTree.Runtime.Board
         private static readonly Color DownedColor = new Color(0.35f, 0.4f, 0.45f);
         private static readonly Color SelectionColor = new Color(0.15f, 0.95f, 1f);
         private static readonly Color FacingColor = new Color(1f, 0.9f, 0.2f);
+        private static readonly Color HitFlashColor = new Color(1f, 0.18f, 0.18f);
         private static readonly Color HealthBackgroundColor =
             new Color(0.15f, 0.15f, 0.15f);
         private static readonly Color HealthFillColor =
@@ -111,17 +112,20 @@ namespace ProtectTree.Runtime.Board
                 visual.Root.SetActive(true);
                 visual.Root.transform.position =
                     _projector.GetCellUnitAnchorWorld(cell, 0.5f);
+                visual.UnitVisual?.SetLevel(piece.Level);
                 visual.UnitVisual?.SetFacing(piece.Facing);
+                ApplyHitFlash(visual);
                 if (visual.Body != null)
                 {
                     visual.Body.color = piece.Status == "Downed"
                         ? DownedColor
-                        : visual.HitFlashSeconds > 0f ? Color.white : ActiveColor;
+                        : visual.HitFlashSeconds > 0f ? HitFlashColor : ActiveColor;
                 }
 
                 visual.Selection.gameObject.SetActive(
                     piece.InstanceId == selectedPieceInstanceId);
                 visual.FacingRoot.localRotation = GetFacingRotation(piece.Facing);
+                visual.Level = piece.Level;
                 visual.PreviousStatus = piece.Status;
 
                 float healthRatio = piece.MaxHealth > 0
@@ -141,6 +145,8 @@ namespace ProtectTree.Runtime.Board
             {
                 if (!visual.SeenThisFrame)
                 {
+                    visual.UnitVisual?.ClearTint();
+                    visual.HitFlashSeconds = 0f;
                     visual.Root.SetActive(false);
                 }
             }
@@ -205,7 +211,7 @@ namespace ProtectTree.Runtime.Board
 
             foreach (MatchEvent matchEvent in events)
             {
-                if (matchEvent.Type == "EnemyDamageRequested"
+                if (matchEvent.Type == "PieceAttackStarted"
                     && matchEvent.SourcePieceInstanceId.HasValue
                     && _visuals.TryGetValue(
                         matchEvent.SourcePieceInstanceId.Value,
@@ -213,6 +219,15 @@ namespace ProtectTree.Runtime.Board
                     && visual.Root.activeInHierarchy)
                 {
                     visual.UnitVisual?.TriggerAttack();
+                }
+                else if (matchEvent.Type == "PiecesMerged"
+                    && matchEvent.PieceInstanceId.HasValue
+                    && _visuals.TryGetValue(
+                        matchEvent.PieceInstanceId.Value,
+                        out PieceVisual mergedVisual)
+                    && mergedVisual.Root.activeInHierarchy)
+                {
+                    mergedVisual.UnitVisual?.PlayMergeBurst(mergedVisual.Level);
                 }
             }
         }
@@ -263,6 +278,48 @@ namespace ProtectTree.Runtime.Board
             }
 
             return false;
+        }
+
+        public bool TryGetPieceFirePoint(
+            int pieceInstanceId,
+            out Vector3 position,
+            out int sortingOrder)
+        {
+            position = default;
+            sortingOrder = 0;
+
+            if (!_visuals.TryGetValue(pieceInstanceId, out PieceVisual visual)
+                || visual.Root == null
+                || !visual.Root.activeInHierarchy)
+            {
+                return false;
+            }
+
+            position = visual.UnitVisual != null
+                ? visual.UnitVisual.GetFirePointWorldPosition(visual.Root.transform.position)
+                : visual.Root.transform.position;
+            sortingOrder = visual.SortingOrder;
+            return true;
+        }
+
+        public bool TryGetPieceGroundPosition(
+            int pieceInstanceId,
+            out Vector3 position,
+            out int sortingOrder)
+        {
+            position = default;
+            sortingOrder = 0;
+
+            if (!_visuals.TryGetValue(pieceInstanceId, out PieceVisual visual)
+                || visual.Root == null
+                || !visual.Root.activeInHierarchy)
+            {
+                return false;
+            }
+
+            position = visual.Root.transform.position;
+            sortingOrder = visual.SortingOrder;
+            return true;
         }
 
         public void Clear()
@@ -418,6 +475,23 @@ namespace ProtectTree.Runtime.Board
             visual.SortingOrder = unitOrder + 1;
         }
 
+        private static void ApplyHitFlash(PieceVisual visual)
+        {
+            if (visual.UnitVisual == null)
+            {
+                return;
+            }
+
+            if (visual.HitFlashSeconds > 0f)
+            {
+                visual.UnitVisual.SetTint(HitFlashColor);
+            }
+            else
+            {
+                visual.UnitVisual.ClearTint();
+            }
+        }
+
         private static Quaternion GetFacingRotation(string facing)
         {
             switch (facing)
@@ -486,6 +560,7 @@ namespace ProtectTree.Runtime.Board
             public SpriteRenderer HealthFill { get; }
             public int PreviousHealth { get; set; }
             public string PreviousStatus { get; set; }
+            public int Level { get; set; } = 1;
             public float HitFlashSeconds { get; set; }
             public int SortingOrder { get; set; }
             public bool SeenThisFrame { get; set; }

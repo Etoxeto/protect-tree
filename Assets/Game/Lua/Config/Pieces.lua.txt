@@ -38,19 +38,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 3,
+                sell_value = 1,
                 max_health = 12,
                 max_block_count = 1,
                 damage = 4,
             },
             [2] = {
-                sell_value = 9,
+                sell_value = 3,
                 max_health = 24,
                 max_block_count = 1,
                 damage = 8,
             },
             [3] = {
-                sell_value = 27,
+                sell_value = 10,
                 max_health = 48,
                 max_block_count = 1,
                 damage = 16,
@@ -88,19 +88,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 3,
+                sell_value = 1,
                 max_health = 20,
                 max_block_count = 2,
                 damage = 5,
             },
             [2] = {
-                sell_value = 9,
+                sell_value = 3,
                 max_health = 24,
                 max_block_count = 2,
                 damage = 8,
             },
             [3] = {
-                sell_value = 27,
+                sell_value = 10,
                 max_health = 48,
                 max_block_count = 2,
                 damage = 16,
@@ -138,19 +138,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 4,
+                sell_value = 1,
                 max_health = 20,
                 max_block_count = 1,
                 damage = 3,
             },
             [2] = {
-                sell_value = 12,
+                sell_value = 3,
                 max_health = 40,
                 max_block_count = 1,
                 damage = 6,
             },
             [3] = {
-                sell_value = 36,
+                sell_value = 10,
                 max_health = 80,
                 max_block_count = 1,
                 damage = 12,
@@ -195,19 +195,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 5,
+                sell_value = 2,
                 max_health = 8,
                 max_block_count = 1,
                 damage = 6,
             },
             [2] = {
-                sell_value = 15,
+                sell_value = 5,
                 max_health = 16,
                 max_block_count = 1,
                 damage = 12,
             },
             [3] = {
-                sell_value = 45,
+                sell_value = 15,
                 max_health = 32,
                 max_block_count = 1,
                 damage = 24,
@@ -266,19 +266,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 5,
+                sell_value = 2,
                 max_health = 8,
                 max_block_count = 1,
                 damage = 6,
             },
             [2] = {
-                sell_value = 15,
+                sell_value = 5,
                 max_health = 16,
                 max_block_count = 1,
                 damage = 12,
             },
             [3] = {
-                sell_value = 45,
+                sell_value = 15,
                 max_health = 32,
                 max_block_count = 1,
                 damage = 24,
@@ -330,19 +330,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 5,
+                sell_value = 4,
                 max_health = 8,
                 max_block_count = 1,
                 damage = 6,
             },
             [2] = {
-                sell_value = 15,
+                sell_value = 12,
                 max_health = 16,
                 max_block_count = 1,
                 damage = 12,
             },
             [3] = {
-                sell_value = 45,
+                sell_value = 36,
                 max_health = 32,
                 max_block_count = 1,
                 damage = 24,
@@ -387,19 +387,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 5,
+                sell_value = 3,
                 max_health = 50,
                 max_block_count = 4,
                 damage = 6,
             },
             [2] = {
-                sell_value = 15,
+                sell_value = 8,
                 max_health = 80,
                 max_block_count = 4,
                 damage = 12,
             },
             [3] = {
-                sell_value = 45,
+                sell_value = 24,
                 max_health = 120,
                 max_block_count = 4,
                 damage = 24,
@@ -445,19 +445,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 5,
+                sell_value = 3,
                 max_health = 50,
                 max_block_count = 3,
                 damage = 8,
             },
             [2] = {
-                sell_value = 15,
+                sell_value = 8,
                 max_health = 80,
                 max_block_count = 3,
                 damage = 15,
             },
             [3] = {
-                sell_value = 45,
+                sell_value = 20,
                 max_health = 120,
                 max_block_count = 3,
                 damage = 28,
@@ -508,19 +508,19 @@ return {
         },
         levels = {
             [1] = {
-                sell_value = 5,
+                sell_value = 4,
                 max_health = 50,
                 max_block_count = 2,
                 damage = 12,
             },
             [2] = {
-                sell_value = 15,
+                sell_value = 12,
                 max_health = 80,
                 max_block_count = 2,
                 damage = 18,
             },
             [3] = {
-                sell_value = 45,
+                sell_value = 36,
                 max_health = 120,
                 max_block_count = 2,
                 damage = 30,

@@ -15,6 +15,9 @@ namespace ProtectTree.Runtime.UI
     [DisallowMultipleComponent]
     public sealed class RoundInfo : MatchSceneFeature
     {
+        private const string BossBattlePhase = "BossBattle";
+        private const string RoundTimeRootName = "RoundTime";
+
         [SerializeField] private TextMeshProUGUI roundNum;
         [SerializeField] private TextMeshProUGUI roundState;
         [SerializeField] private TextMeshProUGUI roundTime;
@@ -79,17 +82,11 @@ namespace ProtectTree.Runtime.UI
         {
             _runtime = context.Runtime;
             _localPlayerId = context.LocalPlayerId;
-            bool hideRoundInfoForBossBattle =
-                context.Flow != null
-                && context.Flow.Phase == "BossBattle"
-                && !context.Flow.IsFinished;
-            SetRoundInfoVisible(!hideRoundInfoForBossBattle);
-            if (hideRoundInfoForBossBattle)
+
+            bool showBossBattleTimerOnly = IsBossBattleTimerOnly(context.Flow);
+            if (!showBossBattleTimerOnly)
             {
-                SetLeakCounter(false, 0);
-                RenderMatchResult(context.Flow);
-                RenderLanDisconnect(context.Flow, context.LanMatch);
-                return;
+                SetBossBattleTimerOnly(false);
             }
 
             RenderFlow(context);
@@ -97,6 +94,12 @@ namespace ProtectTree.Runtime.UI
             RenderReadyButton(context.Flow, context.Players, context.LocalPlayerId);
             RenderMatchResult(context.Flow);
             RenderLanDisconnect(context.Flow, context.LanMatch);
+
+            if (showBossBattleTimerOnly)
+            {
+                SetLeakCounter(false, 0);
+                SetBossBattleTimerOnly(true);
+            }
         }
 
         public override void OnRuntimeUnavailable()
@@ -106,6 +109,7 @@ namespace ProtectTree.Runtime.UI
             _localPlayerId = 0;
             _canRequestReady = false;
             _shownLanDisconnect = false;
+            SetBossBattleTimerOnly(false);
             SetRoundInfoVisible(true);
             ClearEnemyCounters();
             SetText(roundNum, "--");
@@ -390,6 +394,54 @@ namespace ProtectTree.Runtime.UI
             }
         }
 
+        private void SetBossBattleTimerOnly(bool isTimerOnly)
+        {
+            Transform roundTimeRoot = FindRoundTimeRoot();
+            if (isTimerOnly)
+            {
+                gameObject.SetActive(true);
+            }
+
+            // Boss战中顶部信息只保留倒计时，避免和Boss血条、战斗表现互相遮挡。
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                Transform child = transform.GetChild(i);
+                bool shouldShow = !isTimerOnly || child == roundTimeRoot;
+                child.gameObject.SetActive(shouldShow);
+            }
+
+            if (roundTimeRoot != null)
+            {
+                roundTimeRoot.gameObject.SetActive(true);
+            }
+
+            SetGameObjectVisible(roundTime, true);
+
+            if (roundReadyButton != null)
+            {
+                roundReadyButton.gameObject.SetActive(!isTimerOnly);
+            }
+        }
+
+        private Transform FindRoundTimeRoot()
+        {
+            if (roundTime != null)
+            {
+                Transform current = roundTime.transform;
+                while (current != null && current.parent != transform)
+                {
+                    current = current.parent;
+                }
+
+                if (current != null)
+                {
+                    return current;
+                }
+            }
+
+            return transform.Find(RoundTimeRootName);
+        }
+
         private static void SetGameObjectVisible(Component component, bool isVisible)
         {
             if (component != null)
@@ -407,6 +459,13 @@ namespace ProtectTree.Runtime.UI
             }
 
             return lanMatch.GetLifecycleDebugStatus();
+        }
+
+        private static bool IsBossBattleTimerOnly(MatchFlowSnapshot flow)
+        {
+            return flow != null
+                && !flow.IsFinished
+                && flow.Phase == BossBattlePhase;
         }
 
         private static string GetReadyUnavailableLabel(MatchFlowSnapshot flow)

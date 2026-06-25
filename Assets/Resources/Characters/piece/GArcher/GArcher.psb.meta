@@ -4,9 +4,9 @@ ScriptedImporter:
   internalIDToNameTable: []
   externalObjects: {}
   serializedVersion: 2
-  userData:
-  assetBundleName:
-  assetBundleVariant:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
   script: {fileID: 11500000, guid: b2a9591990af98743ba3ff7cf1000886, type: 3}
   textureImporterSettings:
     alphaSource: 1
@@ -71,8 +71,8 @@ ScriptedImporter:
     textureFormatSet: 0
     applyGammaDecoding: 0
   spriteImportData:
-  - name:
-    originalName:
+  - name: 
+    originalName: 
     pivot: {x: 0, y: 0}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -82,12 +82,12 @@ ScriptedImporter:
       y: 0
       width: 0
       height: 0
-    spriteID:
+    spriteID: 
     spriteBone: []
     spriteOutline: []
     vertices: []
     spritePhysicsOutline: []
-    indices:
+    indices: 
     edges: []
     tessellationDetail: 0
     uvTransform: {x: 0, y: 0}
@@ -95,7 +95,7 @@ ScriptedImporter:
   mosaicSpriteImportData: []
   rigSpriteImportData:
   - name: hand_R
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -510,7 +510,7 @@ ScriptedImporter:
     uvTransform: {x: 1036, y: 627}
     spritePosition: {x: 203, y: 530}
   - name: hand_L
-    originalName:
+    originalName: 
     pivot: {x: 0.74076957, y: 0.6408321}
     alignment: 9
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -991,7 +991,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 1535}
     spritePosition: {x: 38, y: 48}
   - name: string_upper
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1327,7 +1327,7 @@ ScriptedImporter:
     uvTransform: {x: 806, y: 3322}
     spritePosition: {x: 375, y: 965}
   - name: string_lowwer
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1652,7 +1652,7 @@ ScriptedImporter:
     uvTransform: {x: 806, y: 2982}
     spritePosition: {x: 395, y: 537}
   - name: arrow
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1990,7 +1990,7 @@ ScriptedImporter:
     uvTransform: {x: 1375, y: 916}
     spritePosition: {x: 408, y: 863}
   - name: head
-    originalName:
+    originalName: 
     pivot: {x: 0.50729257, y: 0.7657616}
     alignment: 9
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -2174,7 +2174,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 2982}
     spritePosition: {x: 115, y: 367}
   - name: body
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -2508,7 +2508,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 4}
     spritePosition: {x: 0, y: 1}
   - name: arm_left
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -2868,7 +2868,7 @@ ScriptedImporter:
     uvTransform: {x: 1718, y: 627}
     spritePosition: {x: 512, y: 767}
   - name: foot_R
-    originalName:
+    originalName: 
     pivot: {x: 0.37426215, y: 0.79186404}
     alignment: 9
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -3039,7 +3039,7 @@ ScriptedImporter:
     uvTransform: {x: 987, y: 4}
     spritePosition: {x: 49, y: 0}
   - name: foot_L
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -3525,14 +3525,14 @@ ScriptedImporter:
   generatePhysicsShape: 0
   paperDollMode: 0
   keepDupilcateSpriteName: 1
-  skeletonAssetReferenceID:
+  skeletonAssetReferenceID: 
   pipeline: {instanceID: 0}
-  pipelineVersion:
+  pipelineVersion: 
   padding: 4
   spriteSizeExpand: 0
   spriteCategoryList:
     categories: []
-  spritePackingTag:
+  spritePackingTag: 
   resliceFromLayer: 0
   mosaicPSDLayers: []
   rigPSDLayers:
@@ -3642,8 +3642,8 @@ ScriptedImporter:
   platformSettingsDirtyTick: 0
   spriteSizeExpandChanged: 0
   generateGOHierarchy: 0
-  textureAssetName:
-  prefabAssetName:
-  spriteLibAssetName:
-  skeletonAssetName:
+  textureAssetName: 
+  prefabAssetName: 
+  spriteLibAssetName: 
+  skeletonAssetName: 
   secondarySpriteTextures: []

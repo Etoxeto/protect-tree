@@ -154,6 +154,8 @@ Current Boss wave: `Boss_Goat`.
 - Boss transfer first publishes `BossTransferRequested`, waits
   `boss_transfer_intro_seconds`, then retargets and publishes `BossRetargeted`.
 - Boss defeat ends the match in Victory.
+- During `BossBattle`, `RoundInfo` keeps only the `RoundTime` timer visible;
+  Boss health is shown by the separate Boss UI.
 
 Detailed reference: `Docs/BOSS_WAVE_RULES.md`, `Docs/BOSS_SKILLS.md`.
 

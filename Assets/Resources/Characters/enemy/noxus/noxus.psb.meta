@@ -4,9 +4,9 @@ ScriptedImporter:
   internalIDToNameTable: []
   externalObjects: {}
   serializedVersion: 2
-  userData:
-  assetBundleName:
-  assetBundleVariant:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
   script: {fileID: 11500000, guid: b2a9591990af98743ba3ff7cf1000886, type: 3}
   textureImporterSettings:
     alphaSource: 1
@@ -71,8 +71,8 @@ ScriptedImporter:
     textureFormatSet: 0
     applyGammaDecoding: 0
   spriteImportData:
-  - name:
-    originalName:
+  - name: 
+    originalName: 
     pivot: {x: 0, y: 0}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -82,12 +82,12 @@ ScriptedImporter:
       y: 0
       width: 0
       height: 0
-    spriteID:
+    spriteID: 
     spriteBone: []
     spriteOutline: []
     vertices: []
     spritePhysicsOutline: []
-    indices:
+    indices: 
     edges: []
     tessellationDetail: 0
     uvTransform: {x: 0, y: 0}
@@ -95,7 +95,7 @@ ScriptedImporter:
   mosaicSpriteImportData: []
   rigSpriteImportData:
   - name: head
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -466,7 +466,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 566}
     spritePosition: {x: 597, y: 468}
   - name: shouder_R
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -782,7 +782,7 @@ ScriptedImporter:
     uvTransform: {x: 206, y: 763}
     spritePosition: {x: 565, y: 417}
   - name: hand_R
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1173,7 +1173,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 202}
     spritePosition: {x: 449, y: 254}
   - name: cloth_out_R
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1522,7 +1522,7 @@ ScriptedImporter:
     uvTransform: {x: 206, y: 365}
     spritePosition: {x: 543, y: 317}
   - name: cloth_out_L
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1871,7 +1871,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 743}
     spritePosition: {x: 700, y: 280}
   - name: hand_L
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -2132,7 +2132,7 @@ ScriptedImporter:
     uvTransform: {x: 206, y: 4}
     spritePosition: {x: 711, y: 353}
   - name: armor_upper
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -2591,7 +2591,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 4}
     spritePosition: {x: 583, y: 319}
   - name: armor_lower
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -2995,7 +2995,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 403}
     spritePosition: {x: 583, y: 257}
   - name: feet_L
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -3333,7 +3333,7 @@ ScriptedImporter:
     uvTransform: {x: 206, y: 856}
     spritePosition: {x: 677, y: 210}
   - name: feet_R
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -3671,7 +3671,7 @@ ScriptedImporter:
     uvTransform: {x: 117, y: 743}
     spritePosition: {x: 599, y: 216}
   - name: cloth_inner_L
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -4031,7 +4031,7 @@ ScriptedImporter:
     uvTransform: {x: 206, y: 145}
     spritePosition: {x: 700, y: 296}
   - name: cloth_inner_R
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -4622,14 +4622,14 @@ ScriptedImporter:
   generatePhysicsShape: 0
   paperDollMode: 0
   keepDupilcateSpriteName: 1
-  skeletonAssetReferenceID:
+  skeletonAssetReferenceID: 
   pipeline: {instanceID: 0}
-  pipelineVersion:
+  pipelineVersion: 
   padding: 4
   spriteSizeExpand: 0
   spriteCategoryList:
     categories: []
-  spritePackingTag:
+  spritePackingTag: 
   resliceFromLayer: 0
   mosaicPSDLayers: []
   rigPSDLayers:
@@ -4759,8 +4759,8 @@ ScriptedImporter:
   platformSettingsDirtyTick: 0
   spriteSizeExpandChanged: 0
   generateGOHierarchy: 0
-  textureAssetName:
-  prefabAssetName:
-  spriteLibAssetName:
-  skeletonAssetName:
+  textureAssetName: 
+  prefabAssetName: 
+  spriteLibAssetName: 
+  skeletonAssetName: 
   secondarySpriteTextures: []

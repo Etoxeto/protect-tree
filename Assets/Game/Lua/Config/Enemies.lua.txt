@@ -63,7 +63,7 @@ return {
     Mysterious_Goat = {
         max_health = 5000,
         path_speed = 0.05,
-        attack_damage = 8,
+        attack_damage = 20,
         attack_interval_seconds = 1.2,
         attack_impact_delay_seconds = 0.35,
         attack_type = "Melee",
@@ -72,13 +72,13 @@ return {
         is_boss = true,
         boss_skills = {
             magic_shooting = {
-                damage = 5,
+                damage = 100,
                 initial_delay_seconds = 4.0,
                 interval_seconds = 8.0,
                 cast_lock_seconds = 4.05,
             },
             magic_explosion = {
-                damage = 12,
+                damage = 100,
                 initial_delay_seconds = 7.0,
                 interval_seconds = 11.0,
                 cast_lock_seconds = 3.25,

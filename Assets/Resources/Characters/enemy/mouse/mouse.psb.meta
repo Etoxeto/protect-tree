@@ -4,9 +4,9 @@ ScriptedImporter:
   internalIDToNameTable: []
   externalObjects: {}
   serializedVersion: 2
-  userData:
-  assetBundleName:
-  assetBundleVariant:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
   script: {fileID: 11500000, guid: b2a9591990af98743ba3ff7cf1000886, type: 3}
   textureImporterSettings:
     alphaSource: 1
@@ -71,8 +71,8 @@ ScriptedImporter:
     textureFormatSet: 0
     applyGammaDecoding: 0
   spriteImportData:
-  - name:
-    originalName:
+  - name: 
+    originalName: 
     pivot: {x: 0, y: 0}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -82,12 +82,12 @@ ScriptedImporter:
       y: 0
       width: 0
       height: 0
-    spriteID:
+    spriteID: 
     spriteBone: []
     spriteOutline: []
     vertices: []
     spritePhysicsOutline: []
-    indices:
+    indices: 
     edges: []
     tessellationDetail: 0
     uvTransform: {x: 0, y: 0}
@@ -95,7 +95,7 @@ ScriptedImporter:
   mosaicSpriteImportData: []
   rigSpriteImportData:
   - name: head
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -609,7 +609,7 @@ ScriptedImporter:
     uvTransform: {x: 588, y: 4}
     spritePosition: {x: 72, y: 92}
   - name: body
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1167,7 +1167,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 4}
     spritePosition: {x: 144, y: 116}
   - name: tail
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1642,7 +1642,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 452}
     spritePosition: {x: 472, y: 59}
   - name: foot_LF
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -1991,7 +1991,7 @@ ScriptedImporter:
     uvTransform: {x: 4, y: 850}
     spritePosition: {x: 252, y: 31}
   - name: foot_LB
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -2406,7 +2406,7 @@ ScriptedImporter:
     uvTransform: {x: 217, y: 850}
     spritePosition: {x: 447, y: 78}
   - name: foot_RF
-    originalName:
+    originalName: 
     pivot: {x: 0.5, y: 0.5}
     alignment: 0
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -2788,7 +2788,7 @@ ScriptedImporter:
     uvTransform: {x: 588, y: 610}
     spritePosition: {x: 144, y: 77}
   - name: foot_RB
-    originalName:
+    originalName: 
     pivot: {x: 0.5855698, y: 0.7840482}
     alignment: 9
     border: {x: 0, y: 0, z: 0, w: 0}
@@ -3369,14 +3369,14 @@ ScriptedImporter:
   generatePhysicsShape: 0
   paperDollMode: 0
   keepDupilcateSpriteName: 1
-  skeletonAssetReferenceID:
+  skeletonAssetReferenceID: 
   pipeline: {instanceID: 0}
-  pipelineVersion:
+  pipelineVersion: 
   padding: 4
   spriteSizeExpand: 0
   spriteCategoryList:
     categories: []
-  spritePackingTag:
+  spritePackingTag: 
   resliceFromLayer: 0
   mosaicPSDLayers: []
   rigPSDLayers:
@@ -3456,8 +3456,8 @@ ScriptedImporter:
   platformSettingsDirtyTick: 0
   spriteSizeExpandChanged: 0
   generateGOHierarchy: 0
-  textureAssetName:
-  prefabAssetName:
-  spriteLibAssetName:
-  skeletonAssetName:
+  textureAssetName: 
+  prefabAssetName: 
+  spriteLibAssetName: 
+  skeletonAssetName: 
   secondarySpriteTextures: []
